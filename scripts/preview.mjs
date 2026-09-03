@@ -149,7 +149,7 @@ const html = `<!DOCTYPE html>
 <body>
 ${BODY_MARKUP}
 <script>
-  const sent = [];
+  const sent = window.__sent = [];
   window.acquireVsCodeApi = () => ({
     postMessage: (m) => { sent.push(m); if (m.type === 'ready') replay(); },
     getState: () => undefined,

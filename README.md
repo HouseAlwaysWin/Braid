@@ -17,7 +17,7 @@ Working:
 - Streaming load: the first rows paint while git is still walking
 - Virtualized rendering: a 20,000-row history keeps 31 row elements in the DOM
 - Click or arrow-key a commit for its message, metadata and changed files
-- Click a file to open it in VS Code's own diff editor, renames included
+- Double-click a file to open it in VS Code's own diff editor, renames included
 - Search by message, author, diff content (`-G`) or path, pushed down into `git log`
 - Auto-refresh: commit from a terminal and the graph reloads itself
 - Draggable split between the graph and the details pane, and a tree/flat toggle for the

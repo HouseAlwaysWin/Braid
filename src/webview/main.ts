@@ -60,6 +60,9 @@ let detailsHeight = 260;
 let currentDetails: CommitDetails | null = null;
 /** Directories the user has folded away, keyed by full path so they survive a re-render. */
 const collapsedDirs = new Set<string>();
+/** Index into the current commit's file list, so the highlight survives a tree/flat switch. */
+let selectedFileIndex = -1;
+let selectedFileEl: HTMLElement | null = null;
 
 /*
  * The panel is created with `retainContextWhenHidden: false`, so hiding the tab destroys this
@@ -292,6 +295,9 @@ splitter.addEventListener('dblclick', () => {
 
 function renderDetails(details: CommitDetails): void {
   currentDetails = details;
+  // A different commit's third file is a different file; carrying the highlight over would be a lie.
+  selectedFileIndex = -1;
+  selectedFileEl = null;
   detailsEl.hidden = false;
   splitter.hidden = false;
   applyDetailsHeight(detailsHeight);
@@ -354,12 +360,30 @@ function renderDetails(details: CommitDetails): void {
   renderFiles();
 }
 
+/**
+ * Highlight a file without opening it.
+ *
+ * Opening a diff is a double-click, so a single click has to leave *some* mark or the list feels
+ * dead under the cursor. The class is toggled directly rather than by re-rendering, because
+ * rebuilding the tree on every click would collapse nothing and cost everything.
+ */
+function selectFile(el: HTMLElement, index: number): void {
+  selectedFileEl?.classList.remove('selected');
+  selectedFileEl = el;
+  selectedFileIndex = index;
+  el.classList.add('selected');
+}
+
 /** One entry in the changed-file list, at a given indent depth. */
 function fileRow(sha: string, file: FileChange, index: number, depth: number, label: string): HTMLElement {
   const el = document.createElement('div');
-  el.className = 'file';
-  el.title = `${STATUS_LABEL[file.status] ?? file.status}: ${file.path}`;
+  el.className = index === selectedFileIndex ? 'file selected' : 'file';
+  el.title = `${STATUS_LABEL[file.status] ?? file.status}: ${file.path}\nDouble-click to open the diff`;
   el.style.paddingLeft = `${depth * 14 + 4}px`;
+
+  if (index === selectedFileIndex) {
+    selectedFileEl = el;
+  }
 
   el.append(span(`status status-${file.status}`, file.status));
 
@@ -378,7 +402,10 @@ function fileRow(sha: string, file: FileChange, index: number, depth: number, la
   }
 
   el.append(path);
-  el.addEventListener('click', () => vscode.postMessage({ type: 'openDiff', sha, index }));
+
+  el.addEventListener('click', () => selectFile(el, index));
+  el.addEventListener('dblclick', () => vscode.postMessage({ type: 'openDiff', sha, index }));
+
   return el;
 }
 
@@ -490,6 +517,10 @@ function renderFiles(): void {
   }
 
   const out = document.createDocumentFragment();
+
+  // Every row is about to be rebuilt, so the old element reference is stale; fileRow picks the new
+  // one up again when it reaches the selected index.
+  selectedFileEl = null;
 
   const heading = document.createElement('div');
   heading.className = 'files-heading';
