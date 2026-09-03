@@ -1,0 +1,185 @@
+/*
+ * Everything visual comes from VS Code's own theme variables, so Braid follows light, dark and
+ * high-contrast themes without knowing which one is active. The lane palette is built on the
+ * `charts` colours because those are the ones a theme author picks to be distinguishable from each
+ * other rather than to sit quietly in the editor chrome.
+ */
+
+:root {
+  --braid-bg: var(--vscode-editor-background);
+  --braid-fg: var(--vscode-editor-foreground);
+  --braid-row-height: 24px;
+
+  --braid-lane-0: var(--vscode-charts-blue, #3794ff);
+  --braid-lane-1: var(--vscode-charts-green, #89d185);
+  --braid-lane-2: var(--vscode-charts-orange, #d18616);
+  --braid-lane-3: var(--vscode-charts-purple, #b180d7);
+  --braid-lane-4: var(--vscode-charts-red, #f14c4c);
+  --braid-lane-5: var(--vscode-charts-yellow, #cca700);
+  --braid-lane-6: var(--vscode-charts-foreground, #cccccc);
+  --braid-lane-7: var(--vscode-charts-blue, #3794ff);
+  --braid-lane-8: var(--vscode-charts-green, #89d185);
+  --braid-lane-9: var(--vscode-charts-purple, #b180d7);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--braid-bg);
+  color: var(--braid-fg);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+#header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  flex: 0 0 auto;
+}
+
+#title {
+  font-weight: 600;
+}
+
+#status {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+#header.error #status {
+  color: var(--vscode-errorForeground);
+}
+
+#main {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+#viewport {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  /* The rows are clipped to the viewport rather than scrolled sideways: a long branch name must
+     not make the whole graph pan horizontally. */
+  overflow-x: hidden;
+}
+
+/* Overlaid on the scroller, never inside it. */
+#graph {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+#spacer {
+  width: 1px;
+}
+
+#rows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--braid-row-height);
+  line-height: var(--braid-row-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  padding-right: 12px;
+  overflow: hidden;
+}
+
+.row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/*
+ * Every text cell needs `min-width: 0`, or a flex item refuses to shrink below its content and
+ * pushes its siblings out of the row instead of ellipsising.
+ */
+.subject {
+  flex: 1 1 auto;
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.author,
+.date,
+.sha {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  min-width: 0;
+}
+
+/* A long name yields before the subject does, but is still allowed to shrink. */
+.author {
+  flex: 0 1 auto;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.date,
+.sha {
+  flex: 0 0 auto;
+}
+
+.sha {
+  font-family: var(--vscode-editor-font-family);
+}
+
+/*
+ * Refs shrink and truncate too. A repository with `claude/history-branch-filter-sections` on both
+ * a local and a remote branch will otherwise eat the entire row and leave no space for the commit
+ * subject, which is the thing the user actually came to read.
+ */
+.ref {
+  flex: 0 1 auto;
+  min-width: 4ch;
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 0.82em;
+  line-height: 1.6;
+  border: 1px solid;
+}
+
+.ref.local {
+  color: var(--vscode-charts-blue, #3794ff);
+  border-color: var(--vscode-charts-blue, #3794ff);
+}
+
+.ref.remote {
+  color: var(--vscode-descriptionForeground);
+  border-color: var(--vscode-descriptionForeground);
+}
+
+.ref.tag {
+  color: var(--vscode-charts-yellow, #cca700);
+  border-color: var(--vscode-charts-yellow, #cca700);
+}

@@ -1,0 +1,125 @@
+{
+  "name": "braid",
+  "displayName": "Braid — Git Graph",
+  "description": "A fast, read-only Git commit graph for VS Code.",
+  "version": "0.0.1",
+  "publisher": "HouseAlwaysWin",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "vscode": "^1.100.0",
+    "node": ">=22.6"
+  },
+  "categories": [
+    "SCM Providers",
+    "Visualization"
+  ],
+  "keywords": [
+    "git",
+    "graph",
+    "history",
+    "log",
+    "commit"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onWebviewPanel:braid.graph"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "braid.openGraph",
+        "title": "Open Git Graph",
+        "category": "Braid",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "braid.refresh",
+        "title": "Refresh",
+        "category": "Braid",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "braid.showGitLog",
+        "title": "Show Git Command Log",
+        "category": "Braid"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "braid.openGraph",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "braid.refresh",
+          "when": "braid.graphVisible"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Braid",
+      "properties": {
+        "braid.pageSize": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 100,
+          "maximum": 20000,
+          "markdownDescription": "How many commits to load per page. The first page is what you wait for on open."
+        },
+        "braid.rowHeight": {
+          "type": "number",
+          "default": 24,
+          "minimum": 16,
+          "maximum": 48,
+          "description": "Height of a single commit row, in pixels."
+        },
+        "braid.maxConcurrentGitProcesses": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Upper bound on git processes Braid runs at once."
+        },
+        "braid.refreshDebounceMs": {
+          "type": "number",
+          "default": 600,
+          "minimum": 0,
+          "maximum": 5000,
+          "description": "Quiet period after repository changes before the graph reloads."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/**/*.test.ts",
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/vscode": "^1.100.0",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Braid runs the git CLI, which honours repository-local configuration."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Braid needs a real filesystem and a local git executable."
+    }
+  }
+}
