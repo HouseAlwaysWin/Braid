@@ -26,6 +26,15 @@ Working:
 Not built yet: ref filtering, stash rows, and jumping to a commit by hash. Write operations
 (checkout, merge, rebase, …) are deliberately out of scope for v1 — Braid only ever *reads*.
 
+## Where to find it
+
+Braid opens as an editor tab, not a sidebar view, so it has no Activity Bar icon - the same shape
+as the extension it replaces. Three ways in:
+
+- The **Braid** button in the status bar (hidden when the workspace has no repository)
+- The branch icon in the **Source Control** title bar
+- **Braid: Open Git Graph** in the command palette
+
 ## Design notes
 
 **The layout is resumable.** Lane assignment is a single forward pass, so its entire continuation is

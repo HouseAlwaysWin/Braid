@@ -21,6 +21,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onWebviewPanel:braid.graph"
   ],
   "contributes": {
@@ -88,6 +89,11 @@
           "minimum": 0,
           "maximum": 5000,
           "description": "Quiet period after repository changes before the graph reloads."
+        },
+        "braid.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a Braid button in the status bar when the workspace has a git repository."
         }
       }
     }

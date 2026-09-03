@@ -55,6 +55,7 @@ let panelCreated = null;
 const problems = [];
 const contentProviders = new Map();
 const diffsOpened = [];
+let statusBarItem = null;
 
 const uri = (p) => ({
   fsPath: p,
@@ -98,6 +99,18 @@ const vscodeStub = {
     showInformationMessage: (m) => problems.push(`unexpected info message: ${m}`),
     showWarningMessage: (m) => problems.push(`unexpected warning: ${m}`),
     setStatusBarMessage: () => ({ dispose() {} }),
+    createStatusBarItem: (id, alignment, priority) => {
+      statusBarItem = { id, alignment, priority, visible: false };
+      return {
+        set name(v) { statusBarItem.name = v; },
+        set text(v) { statusBarItem.text = v; },
+        set tooltip(v) { statusBarItem.tooltip = v; },
+        set command(v) { statusBarItem.command = v; },
+        show() { statusBarItem.visible = true; },
+        hide() { statusBarItem.visible = false; },
+        dispose() {},
+      };
+    },
     createWebviewPanel: (viewType, title) => {
       panelCreated = { viewType, title };
       return {
@@ -127,9 +140,12 @@ const vscodeStub = {
       };
     },
   },
+  StatusBarAlignment: { Left: 1, Right: 2 },
   workspace: {
     workspaceFolders: [{ uri: uri(repoPath) }],
     getConfiguration: () => ({ get: (_key, fallback) => fallback }),
+    onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
+    onDidChangeConfiguration: () => ({ dispose() {} }),
     registerTextDocumentContentProvider: (scheme, provider) => {
       contentProviders.set(scheme, provider);
       return { dispose() {} };
@@ -159,7 +175,17 @@ console.log('exports        :', Object.keys(extension).join(', '));
 const context = { subscriptions: [], extensionUri: uri(resolve('.').replace(/\\/g, '/')) };
 extension.activate(context);
 
+await new Promise((r) => setTimeout(r, 800));
+
 console.log('commands       :', [...commands.keys()].join(', '));
+console.log('status bar     :', statusBarItem === null ? 'NOT CREATED' : JSON.stringify({ text: statusBarItem.text, command: statusBarItem.command, visible: statusBarItem.visible }));
+
+if (statusBarItem === null) {
+  problems.push('no status bar item was created');
+} else {
+  if (statusBarItem.command !== 'braid.openGraph') problems.push('status bar item runs the wrong command: ' + statusBarItem.command);
+  if (!statusBarItem.visible) problems.push('status bar item stayed hidden in a real repository');
+}
 console.log('subscriptions  :', context.subscriptions.length);
 
 for (const expected of ['braid.openGraph', 'braid.refresh', 'braid.showGitLog']) {

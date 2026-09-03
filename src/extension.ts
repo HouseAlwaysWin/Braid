@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import { Git } from './git/exec.ts';
+import type { RepoInfo } from './git/discovery.ts';
 import { discover } from './git/discovery.ts';
 import { BraidPanel } from './panel.ts';
 import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
@@ -45,6 +46,19 @@ function candidateFolders(): string[] {
   return [...new Set(folders)];
 }
 
+/** The first candidate folder that turns out to be a repository, or null if none are. */
+async function findRepository(git: Git): Promise<RepoInfo | null> {
+  for (const folder of candidateFolders()) {
+    const repo = await discover(git, folder);
+
+    if (repo !== null) {
+      return repo;
+    }
+  }
+
+  return null;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('Braid', { log: true });
   context.subscriptions.push(output);
@@ -67,28 +81,24 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, new RevisionContentProvider(git)),
 
     vscode.commands.registerCommand('braid.openGraph', async () => {
-      const folders = candidateFolders();
-
-      if (folders.length === 0) {
+      if (candidateFolders().length === 0) {
         void vscode.window.showInformationMessage('Braid: open a folder containing a git repository first.');
         return;
       }
 
-      for (const folder of folders) {
-        const repo = await discover(git, folder);
+      const repo = await findRepository(git);
 
-        if (repo !== null) {
-          BraidPanel.show(
-            context.extensionUri,
-            git,
-            repo,
-            vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
-          );
-          return;
-        }
+      if (repo === null) {
+        void vscode.window.showWarningMessage('Braid: no git repository found in this workspace.');
+        return;
       }
 
-      void vscode.window.showWarningMessage('Braid: no git repository found in this workspace.');
+      BraidPanel.show(
+        context.extensionUri,
+        git,
+        repo,
+        vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
+      );
     }),
 
     vscode.commands.registerCommand('braid.refresh', () => {
@@ -104,6 +114,50 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('braid.showGitLog', () => output?.show()),
   );
+
+  /*
+   * The status bar is Braid's only always-visible entry point: the graph opens as an editor tab,
+   * not a sidebar view, so there is nothing in the Activity Bar to click. (An Activity Bar icon is
+   * not an option on its own - VS Code puts view containers there, not commands.)
+   *
+   * It is hidden in workspaces with no repository, because an entry point to something that cannot
+   * open is worse than no entry point.
+   */
+  const statusBar = vscode.window.createStatusBarItem(
+    'braid.open',
+    vscode.StatusBarAlignment.Left,
+    100,
+  );
+
+  statusBar.name = 'Braid';
+  statusBar.text = '$(git-branch) Braid';
+  statusBar.tooltip = 'Open the Braid commit graph';
+  statusBar.command = 'braid.openGraph';
+  context.subscriptions.push(statusBar);
+
+  const updateStatusBar = async (): Promise<void> => {
+    const enabled = vscode.workspace
+      .getConfiguration('braid')
+      .get<boolean>('statusBar.enabled', true);
+
+    if (!enabled || (await findRepository(git)) === null) {
+      statusBar.hide();
+      return;
+    }
+
+    statusBar.show();
+  };
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => void updateStatusBar()),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('braid.statusBar.enabled')) {
+        void updateStatusBar();
+      }
+    }),
+  );
+
+  void updateStatusBar();
 
   output.info('Braid activated');
 }
