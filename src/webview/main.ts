@@ -174,55 +174,128 @@ const STATUS_LABEL: Record<string, string> = {
   X: 'unknown',
 };
 
+function span(className: string, text: string): HTMLSpanElement {
+  const el = document.createElement('span');
+  el.className = className;
+  el.textContent = text;
+  return el;
+}
+
+/** `2026-07-28T13:37:20+08:00` -> `2026-07-28 13:37:20`, without pretending to know a locale. */
+function formatDate(iso: string): string {
+  return iso.slice(0, 19).replace('T', ' ');
+}
+
+/**
+ * A path scans far better as a dim folder and a bright filename than as one even-toned string -
+ * in a list of fourteen files under `GitFlick.Tests/`, the part that differs is the only part
+ * worth reading.
+ */
+function appendPath(target: HTMLElement, path: string): void {
+  const cut = path.lastIndexOf('/');
+
+  if (cut >= 0) {
+    target.append(span('path-dir', path.slice(0, cut + 1)));
+  }
+
+  target.append(span('path-name', cut >= 0 ? path.slice(cut + 1) : path));
+}
+
+/** Follow a parent link. The commit may not be loaded if a search is narrowing the view. */
+function jumpTo(sha: string): void {
+  const index = rows.findIndex((row) => row.sha === sha);
+
+  if (index >= 0) {
+    select(index);
+  } else {
+    statusEl.textContent = `${sha.slice(0, 8)} is not in the current view`;
+  }
+}
+
 function renderDetails(details: CommitDetails): void {
   detailsEl.hidden = false;
 
   const meta = document.createDocumentFragment();
 
-  const line = (label: string, value: string): void => {
+  const line = (label: string, ...values: HTMLElement[]): void => {
     const wrap = document.createElement('div');
-    const key = document.createElement('span');
-    key.className = 'meta-key';
-    key.textContent = label;
-    const val = document.createElement('span');
-    val.className = 'meta-value';
-    val.textContent = value;
-    wrap.append(key, val);
+    const value = document.createElement('span');
+    value.className = 'meta-value';
+    value.append(...values);
+    wrap.append(span('meta-key', label), value);
     meta.append(wrap);
   };
 
-  line('commit', details.sha);
-  line('author', `${details.author} <${details.authorEmail}>  ${details.authorDate.slice(0, 19).replace('T', ' ')}`);
+  const sha = span('sha-full', details.sha);
+  sha.title = 'Copy the full hash';
+  sha.addEventListener('click', () => vscode.postMessage({ type: 'copy', text: details.sha }));
+  line('commit', sha);
+
+  line(
+    'author',
+    span('person', details.author),
+    span('email', `<${details.authorEmail}>`),
+    span('when', formatDate(details.authorDate)),
+  );
+
+  // A rebase, a squash, or a merge made through a web UI leaves a committer who is not the author.
+  // When they are the same person, saying it twice is noise.
+  if (details.committer !== details.author) {
+    line('committer', span('person', details.committer), span('when', formatDate(details.committerDate)));
+  }
 
   if (details.parents.length > 0) {
-    line('parents', details.parents.map((p) => p.slice(0, 8)).join('  '));
+    const parents = details.parents.map((parent) => {
+      const chip = span('parent', parent.slice(0, 8));
+      chip.title = `Go to ${parent}`;
+      chip.addEventListener('click', () => jumpTo(parent));
+      return chip;
+    });
+
+    line(details.parents.length > 1 ? 'parents' : 'parent', ...parents);
   }
 
   detailMetaEl.replaceChildren(meta);
-  detailBodyEl.textContent = details.body;
+
+  // The first line is a title and the rest is prose; rendering them alike makes a long message a
+  // wall of text.
+  const lines = details.body.split('\n');
+  const body = document.createDocumentFragment();
+  body.append(span('body-subject', lines[0] ?? ''));
+
+  const rest = lines.slice(1).join('\n').trim();
+  if (rest.length > 0) {
+    body.append(span('body-rest', rest));
+  }
+
+  detailBodyEl.replaceChildren(body);
 
   const files = document.createDocumentFragment();
-  const heading = document.createElement('div');
-  heading.className = 'files-heading';
-  heading.textContent =
-    details.files.length === 1 ? '1 file changed' : `${details.files.length} files changed`;
-  files.append(heading);
+  files.append(
+    span(
+      'files-heading',
+      details.files.length === 1 ? '1 file changed' : `${details.files.length} files changed`,
+    ),
+  );
 
   details.files.forEach((file: FileChange, index) => {
     const el = document.createElement('div');
     el.className = 'file';
     el.title = `${STATUS_LABEL[file.status] ?? file.status}: ${file.path}`;
 
-    const badge = document.createElement('span');
-    badge.className = `status status-${file.status}`;
-    badge.textContent = file.status;
+    el.append(span(`status status-${file.status}`, file.status));
 
     const path = document.createElement('span');
     path.className = 'file-path';
-    path.textContent =
-      file.oldPath === null ? file.path : `${file.oldPath} → ${file.path}`;
 
-    el.append(badge, path);
+    if (file.oldPath !== null) {
+      appendPath(path, file.oldPath);
+      path.append(span('rename-arrow', ' → '));
+    }
+
+    appendPath(path, file.path);
+    el.append(path);
+
     el.addEventListener('click', () =>
       vscode.postMessage({ type: 'openDiff', sha: details.sha, index }),
     );

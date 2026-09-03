@@ -61,16 +61,29 @@ if (firstSha !== undefined) {
   messages.push({ type: 'details', details: await loadCommitDetails(git, repo, firstSha) });
 }
 
+/*
+ * Approximations of VS Code's own Dark Modern / Light Modern values. A light theme is not a dark
+ * theme with a white background: its accent colours are darker too. Getting that wrong here made
+ * the preview lie about contrast - which is the one thing this harness exists to be honest about.
+ */
 const dark = {
   '--vscode-editor-background': '#1f1f1f',
   '--vscode-editor-foreground': '#cccccc',
   '--vscode-descriptionForeground': '#9d9d9d',
   '--vscode-list-hoverBackground': '#2a2d2e',
+  '--vscode-list-activeSelectionBackground': '#04395e',
   '--vscode-panel-border': '#2b2b2b',
   '--vscode-errorForeground': '#f14c4c',
+  '--vscode-focusBorder': '#0078d4',
   '--vscode-font-family': 'system-ui, sans-serif',
   '--vscode-font-size': '13px',
   '--vscode-editor-font-family': 'Consolas, monospace',
+  '--vscode-editorWidget-background': '#252526',
+  '--vscode-input-background': '#313131',
+  '--vscode-input-foreground': '#cccccc',
+  '--vscode-input-border': '#3c3c3c',
+  '--vscode-textCodeBlock-background': '#2b2b2b',
+  '--vscode-textLink-foreground': '#4daafc',
   '--vscode-charts-blue': '#3794ff',
   '--vscode-charts-green': '#89d185',
   '--vscode-charts-orange': '#d18616',
@@ -78,6 +91,10 @@ const dark = {
   '--vscode-charts-red': '#f14c4c',
   '--vscode-charts-yellow': '#cca700',
   '--vscode-charts-foreground': '#cccccc',
+  '--vscode-gitDecoration-addedResourceForeground': '#81b88b',
+  '--vscode-gitDecoration-modifiedResourceForeground': '#e2c08d',
+  '--vscode-gitDecoration-deletedResourceForeground': '#c74e39',
+  '--vscode-gitDecoration-renamedResourceForeground': '#73c991',
 };
 
 const lightTheme = {
@@ -86,8 +103,25 @@ const lightTheme = {
   '--vscode-editor-foreground': '#3b3b3b',
   '--vscode-descriptionForeground': '#717171',
   '--vscode-list-hoverBackground': '#f0f0f0',
+  '--vscode-list-activeSelectionBackground': '#e4e6f1',
   '--vscode-panel-border': '#e5e5e5',
+  '--vscode-editorWidget-background': '#f8f8f8',
+  '--vscode-input-background': '#ffffff',
+  '--vscode-input-foreground': '#3b3b3b',
+  '--vscode-input-border': '#cecece',
+  '--vscode-textCodeBlock-background': '#f3f3f3',
+  '--vscode-textLink-foreground': '#005fb8',
+  '--vscode-charts-blue': '#1a85ff',
+  '--vscode-charts-green': '#388a34',
+  '--vscode-charts-orange': '#b5620a',
+  '--vscode-charts-purple': '#652d90',
+  '--vscode-charts-red': '#cd3131',
+  '--vscode-charts-yellow': '#a67c00',
   '--vscode-charts-foreground': '#3b3b3b',
+  '--vscode-gitDecoration-addedResourceForeground': '#587c0c',
+  '--vscode-gitDecoration-modifiedResourceForeground': '#895503',
+  '--vscode-gitDecoration-deletedResourceForeground': '#ad0707',
+  '--vscode-gitDecoration-renamedResourceForeground': '#007100',
 };
 
 const theme = light ? lightTheme : dark;

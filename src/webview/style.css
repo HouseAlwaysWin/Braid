@@ -149,6 +149,7 @@ body {
 
 .sha {
   font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-charts-orange, #d18616);
 }
 
 /*
@@ -232,6 +233,7 @@ body {
 }
 
 .files-heading {
+  display: block;
   margin: 12px 0 4px;
   color: var(--vscode-descriptionForeground);
   font-size: 0.9em;
@@ -305,4 +307,66 @@ body {
 
 #search-input::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+}
+
+/*
+ * Colour in the details pane is doing one job: letting the eye find the piece it wants without
+ * reading the rest. Identity (hashes) gets the accent, people get the foreground, machine facts
+ * (emails, timestamps) recede, and anything clickable looks clickable.
+ */
+.sha-full {
+  color: var(--vscode-charts-orange, #d18616);
+  cursor: pointer;
+}
+
+.sha-full:hover {
+  text-decoration: underline;
+}
+
+.person {
+  color: var(--braid-fg);
+}
+
+.email,
+.when {
+  color: var(--vscode-descriptionForeground);
+  margin-left: 8px;
+}
+
+/* A parent is a link to somewhere, so it reads like one. */
+.parent {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+.parent:hover {
+  text-decoration: underline;
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground, #3794ff));
+}
+
+.body-subject {
+  display: block;
+  font-weight: 600;
+  color: var(--braid-fg);
+}
+
+.body-rest {
+  display: block;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* In a list of files under one folder, the filename is the only part that differs. */
+.path-dir {
+  color: var(--vscode-descriptionForeground);
+}
+
+.path-name {
+  color: var(--braid-fg);
+}
+
+.rename-arrow {
+  color: var(--vscode-gitDecoration-renamedResourceForeground, #73c991);
 }
