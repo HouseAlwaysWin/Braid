@@ -14,6 +14,7 @@ import { Git } from '../src/git/exec.ts';
 import { discover } from '../src/git/discovery.ts';
 import { HistoryLoader } from '../src/git/history.ts';
 import { BODY_MARKUP } from '../src/webview/markup.ts';
+import { loadCommitDetails } from '../src/git/details.ts';
 
 const repoPath = process.argv[2] ?? 'D:/DotNetProjects/GitFlick';
 const light = process.argv.includes('--light');
@@ -51,6 +52,14 @@ await loader.load(
 );
 
 messages.push({ type: 'done', total: loader.rowCount, elapsedMs: 0 });
+
+// Replay a selection too, so the details pane is part of what gets looked at rather than something
+// only ever seen inside VS Code.
+const firstSha = messages.find((m) => m.type === 'page')?.rows?.[0]?.sha;
+
+if (firstSha !== undefined) {
+  messages.push({ type: 'details', details: await loadCommitDetails(git, repo, firstSha) });
+}
 
 const dark = {
   '--vscode-editor-background': '#1f1f1f',

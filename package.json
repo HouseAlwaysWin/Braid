@@ -5,11 +5,8 @@
   "version": "0.0.1",
   "publisher": "HouseAlwaysWin",
   "license": "MIT",
-  "type": "module",
-  "private": true,
   "engines": {
-    "vscode": "^1.100.0",
-    "node": ">=22.6"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "SCM Providers",
@@ -101,13 +98,16 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test test/**/*.test.ts",
     "vscode:prepublish": "node esbuild.mjs --production",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "load-check": "node scripts/load-check.mjs",
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
     "@types/vscode": "^1.100.0",
     "esbuild": "^0.25.9",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "@vscode/vsce": "^3.6.0"
   },
   "extensionKind": [
     "workspace"
@@ -121,5 +121,9 @@
       "supported": false,
       "description": "Braid needs a real filesystem and a local git executable."
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HouseAlwaysWin/Braid.git"
   }
 }

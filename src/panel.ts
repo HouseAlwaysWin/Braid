@@ -10,6 +10,12 @@ import * as vscode from 'vscode';
 import type { Git } from './git/exec.ts';
 import type { RepoInfo } from './git/discovery.ts';
 import { HistoryLoader } from './git/history.ts';
+import type { CommitDetails } from './git/details.ts';
+import { loadCommitDetails } from './git/details.ts';
+import { revisionUri } from './contentProvider.ts';
+import { RepoWatcher, refSignature } from './git/watcher.ts';
+import type { Search } from './git/search.ts';
+import { searchArgs } from './git/search.ts';
 import type { HostMessage, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
 
@@ -43,6 +49,12 @@ function nonce(): string {
 
 export class BraidPanel {
   private static readonly open = new Map<string, BraidPanel>();
+  private static current: BraidPanel | null = null;
+
+  /** The graph the user is looking at, for commands that act on "this graph". */
+  static active(): BraidPanel | null {
+    return BraidPanel.current;
+  }
 
   private readonly panel: vscode.WebviewPanel;
   private readonly git: Git;
@@ -50,6 +62,13 @@ export class BraidPanel {
   private readonly extensionUri: vscode.Uri;
   private readonly disposables: vscode.Disposable[] = [];
   private loading: AbortController | null = null;
+  private detailsLoading: AbortController | null = null;
+  /** The last commit whose details were loaded, so opening a diff needs no second `git show`. */
+  private details: CommitDetails | null = null;
+  private readonly watcher: RepoWatcher;
+  /** Fingerprint of the refs the last load was built from, to tell a real change from churn. */
+  private signature: string | null = null;
+  private search: Search | null = null;
 
   static show(
     extensionUri: vscode.Uri,
@@ -100,7 +119,60 @@ export class BraidPanel {
       this.disposables,
     );
 
+    panel.onDidChangeViewState(() => this.setActive(panel.active), null, this.disposables);
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
+
+    const debounce = vscode.workspace
+      .getConfiguration('braid')
+      .get<number>('refreshDebounceMs', 600);
+
+    this.watcher = new RepoWatcher(repo, () => void this.onRepositoryChanged(), debounce);
+    this.setActive(true);
+  }
+
+  /**
+   * A filesystem event fired. Confirm something the graph actually draws from moved before paying
+   * for a reload - an editor saving a file inside .git, or git touching a lock, must not cost a
+   * full re-walk of the history.
+   */
+  private async onRepositoryChanged(): Promise<void> {
+    let signature: string;
+
+    try {
+      signature = await refSignature(this.git, this.repo);
+    } catch {
+      return;
+    }
+
+    if (signature === this.signature) {
+      return;
+    }
+
+    const first = this.signature === null;
+    this.signature = signature;
+
+    if (!first) {
+      this.post({ type: 'reloading', reason: 'repository changed' });
+      await this.reload();
+    }
+  }
+
+  /**
+   * Track which graph is in front, and mirror it into a context key so `Braid: Refresh` only
+   * offers itself in the command palette when there is actually a graph to refresh.
+   */
+  private setActive(active: boolean): void {
+    if (active) {
+      BraidPanel.current = this;
+    } else if (BraidPanel.current === this) {
+      BraidPanel.current = null;
+    }
+
+    void vscode.commands.executeCommand(
+      'setContext',
+      'braid.graphVisible',
+      BraidPanel.current !== null,
+    );
   }
 
   /** Throw away whatever is on screen and walk the history again. */
@@ -116,15 +188,78 @@ export class BraidPanel {
       case 'refresh':
         await this.reload();
         break;
+      case 'search':
+        this.search = message.search;
+        await this.reload();
+        break;
       case 'copy':
         await vscode.env.clipboard.writeText(message.text);
         void vscode.window.setStatusBarMessage('Braid: copied', 2000);
         break;
       case 'selectCommit':
+        await this.showDetails(message.sha);
+        break;
+      case 'openDiff':
+        await this.openDiff(message.sha, message.index);
         break;
       default:
         break;
     }
+  }
+
+  /**
+   * Load one commit's message and file list. Selection follows the arrow keys, so a held-down key
+   * would otherwise queue a `git show` per row - each new request cancels the one before it.
+   */
+  private async showDetails(sha: string): Promise<void> {
+    this.detailsLoading?.abort();
+    const controller = new AbortController();
+    this.detailsLoading = controller;
+
+    try {
+      const details = await loadCommitDetails(this.git, this.repo, sha, controller.signal);
+
+      if (!controller.signal.aborted) {
+        this.details = details;
+        this.post({ type: 'details', details });
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      }
+    } finally {
+      if (this.detailsLoading === controller) {
+        this.detailsLoading = null;
+      }
+    }
+  }
+
+  private async openDiff(sha: string, index: number): Promise<void> {
+    const details =
+      this.details?.sha === sha
+        ? this.details
+        : await loadCommitDetails(this.git, this.repo, sha);
+
+    const file = details.files[index];
+    if (file === undefined) {
+      return;
+    }
+
+    const short = sha.slice(0, 8);
+    const name = file.path.split('/').pop() ?? file.path;
+
+    // Both sides are addressed by blob OID, so a rename diffs correctly even though the two sides
+    // have different paths.
+    const left = revisionUri(this.repo.root, file.oldPath ?? file.path, file.oldBlob, `${short}^`);
+    const right = revisionUri(this.repo.root, file.path, file.newBlob, short);
+
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      left,
+      right,
+      `${name} (${short})`,
+      { preview: true },
+    );
   }
 
   private post(message: HostMessage): void {
@@ -151,6 +286,9 @@ export class BraidPanel {
     const loader = new HistoryLoader(this.git, this.repo);
     const started = Date.now();
 
+    // Take the fingerprint before walking, so a ref that moves mid-walk still trips the watcher.
+    this.signature = await refSignature(this.git, this.repo).catch(() => null);
+
     try {
       await loader.load(
         (page) => {
@@ -169,7 +307,11 @@ export class BraidPanel {
 
           this.post({ type: 'page', rows, delta: page.delta });
         },
-        { batchSize: 500, maxCommits: config.get<number>('maxCommits', 250_000) },
+        {
+          batchSize: 500,
+          maxCommits: config.get<number>('maxCommits', 250_000),
+          filters: searchArgs(this.search),
+        },
         controller.signal,
       );
 
@@ -214,7 +356,10 @@ ${BODY_MARKUP}
 
   private dispose(): void {
     this.loading?.abort();
+    this.detailsLoading?.abort();
+    this.watcher.dispose();
     BraidPanel.open.delete(this.repo.root);
+    this.setActive(false);
 
     for (const d of this.disposables) {
       d.dispose();

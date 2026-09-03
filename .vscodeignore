@@ -1,8 +1,14 @@
+.claude/**
 .vscode/**
+.github/**
 src/**
 test/**
+scripts/**
 node_modules/**
+dist/**/*.map
+dist/preview.html
 tsconfig.json
 esbuild.mjs
-*.vsix
+.gitattributes
 .gitignore
+*.vsix

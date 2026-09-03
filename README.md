@@ -16,9 +16,13 @@ Working:
 - Ordinary clones, bare repositories, linked worktrees and submodules
 - Streaming load: the first rows paint while git is still walking
 - Virtualized rendering: a 20,000-row history keeps 31 row elements in the DOM
+- Click or arrow-key a commit for its message, metadata and changed files
+- Click a file to open it in VS Code's own diff editor, renames included
+- Search by message, author, diff content (`-G`) or path, pushed down into `git log`
+- Auto-refresh: commit from a terminal and the graph reloads itself
 
-Not built yet: commit details, file lists, diffs, search and filter, and auto-refresh on external
-changes. Write operations (checkout, merge, rebase, …) are deliberately out of scope for v1.
+Not built yet: ref filtering, stash rows, and jumping to a commit by hash. Write operations
+(checkout, merge, rebase, …) are deliberately out of scope for v1 — Braid only ever *reads*.
 
 ## Design notes
 

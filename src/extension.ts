@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { Git } from './git/exec.ts';
 import { discover } from './git/discovery.ts';
 import { BraidPanel } from './panel.ts';
+import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
 
 let output: vscode.LogOutputChannel | undefined;
 
@@ -63,6 +64,8 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(SCHEME, new RevisionContentProvider(git)),
+
     vscode.commands.registerCommand('braid.openGraph', async () => {
       const folders = candidateFolders();
 
@@ -86,6 +89,17 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       void vscode.window.showWarningMessage('Braid: no git repository found in this workspace.');
+    }),
+
+    vscode.commands.registerCommand('braid.refresh', () => {
+      const panel = BraidPanel.active();
+
+      if (panel === null) {
+        void vscode.window.showInformationMessage('Braid: no graph is open.');
+        return;
+      }
+
+      panel.refresh();
     }),
 
     vscode.commands.registerCommand('braid.showGitLog', () => output?.show()),
