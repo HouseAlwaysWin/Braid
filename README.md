@@ -20,6 +20,8 @@ Working:
 - Click a file to open it in VS Code's own diff editor, renames included
 - Search by message, author, diff content (`-G`) or path, pushed down into `git log`
 - Auto-refresh: commit from a terminal and the graph reloads itself
+- Draggable split between the graph and the details pane, and a tree/flat toggle for the
+  changed-file list - both remembered across panel reloads
 
 Not built yet: ref filtering, stash rows, and jumping to a commit by hash. Write operations
 (checkout, merge, rebase, …) are deliberately out of scope for v1 — Braid only ever *reads*.

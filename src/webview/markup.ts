@@ -26,6 +26,7 @@ export const BODY_MARKUP = `<header id="header">
   <div id="viewport"><div id="spacer"></div><div id="rows"></div></div>
   <canvas id="graph"></canvas>
 </main>
+<div id="splitter" hidden role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
 <section id="details" hidden>
   <div id="detail-meta"></div>
   <pre id="detail-body"></pre>

@@ -68,6 +68,7 @@ export class BraidPanel {
   private readonly watcher: RepoWatcher;
   /** Fingerprint of the refs the last load was built from, to tell a real change from churn. */
   private signature: string | null = null;
+  private signaturePromise: Promise<string | null> | null = null;
   private search: Search | null = null;
 
   static show(
@@ -136,6 +137,10 @@ export class BraidPanel {
    * full re-walk of the history.
    */
   private async onRepositoryChanged(): Promise<void> {
+    // The baseline is captured alongside the walk rather than before it, so it may still be in
+    // flight. Comparing against a half-set baseline would either miss a change or invent one.
+    await this.signaturePromise;
+
     let signature: string;
 
     try {
@@ -286,8 +291,20 @@ export class BraidPanel {
     const loader = new HistoryLoader(this.git, this.repo);
     const started = Date.now();
 
-    // Take the fingerprint before walking, so a ref that moves mid-walk still trips the watcher.
-    this.signature = await refSignature(this.git, this.repo).catch(() => null);
+    /*
+     * Fingerprint the refs alongside the walk, not before it. Awaiting here put two more process
+     * spawns on the critical path between the user's click and the first row on screen, which on
+     * Windows - where spawning git costs tens of milliseconds before it does any work, more with a
+     * virus scanner in the way - is latency nobody is getting anything for.
+     *
+     * Starting it first and resolving it later still gives the watcher a baseline from before the
+     * walk finished: if a ref moves mid-walk the fingerprint is already stale, so the next event
+     * reloads, which is the safe direction to be wrong in.
+     */
+    this.signaturePromise = refSignature(this.git, this.repo).catch(() => null);
+    void this.signaturePromise.then((value) => {
+      this.signature = value;
+    });
 
     try {
       await loader.load(

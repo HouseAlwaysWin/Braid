@@ -55,10 +55,19 @@ messages.push({ type: 'done', total: loader.rowCount, elapsedMs: 0 });
 
 // Replay a selection too, so the details pane is part of what gets looked at rather than something
 // only ever seen inside VS Code.
-const firstSha = messages.find((m) => m.type === 'page')?.rows?.[0]?.sha;
+// Pick the busiest of the first few commits, so the file tree has something to be a tree about.
+const candidates = (messages.find((m) => m.type === 'page')?.rows ?? []).slice(0, 12);
+let chosen = null;
 
-if (firstSha !== undefined) {
-  messages.push({ type: 'details', details: await loadCommitDetails(git, repo, firstSha) });
+for (const row of candidates) {
+  const details = await loadCommitDetails(git, repo, row.sha);
+  if (chosen === null || details.files.length > chosen.files.length) {
+    chosen = details;
+  }
+}
+
+if (chosen !== null) {
+  messages.push({ type: 'details', details: chosen });
 }
 
 /*

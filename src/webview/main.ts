@@ -46,6 +46,41 @@ const detailsEl = document.getElementById('details') as HTMLElement;
 const detailMetaEl = document.getElementById('detail-meta') as HTMLElement;
 const detailBodyEl = document.getElementById('detail-body') as HTMLElement;
 const detailFilesEl = document.getElementById('detail-files') as HTMLElement;
+const splitter = document.getElementById('splitter') as HTMLElement;
+
+type FileView = 'tree' | 'flat';
+
+interface ViewState {
+  readonly fileView?: FileView;
+  readonly detailsHeight?: number;
+}
+
+let fileView: FileView = 'tree';
+let detailsHeight = 260;
+let currentDetails: CommitDetails | null = null;
+/** Directories the user has folded away, keyed by full path so they survive a re-render. */
+const collapsedDirs = new Set<string>();
+
+/*
+ * The panel is created with `retainContextWhenHidden: false`, so hiding the tab destroys this
+ * webview and showing it again builds a new one. Layout choices would evaporate every time without
+ * somewhere to put them - `setState` is that somewhere, and it costs nothing to keep warm.
+ */
+function saveViewState(): void {
+  vscode.setState({ fileView, detailsHeight } satisfies ViewState);
+}
+
+function restoreViewState(): void {
+  const state = vscode.getState() as ViewState | undefined;
+
+  if (state?.fileView !== undefined) {
+    fileView = state.fileView;
+  }
+
+  if (state?.detailsHeight !== undefined) {
+    detailsHeight = state.detailsHeight;
+  }
+}
 
 let rowHeight = 24;
 let graphWidth = 0;
@@ -212,8 +247,54 @@ function jumpTo(sha: string): void {
   }
 }
 
+/**
+ * Resize the details pane. The graph's canvas is sized to the viewport, so every change has to be
+ * followed by a redraw - the lanes would otherwise keep the height they had before the drag.
+ */
+function applyDetailsHeight(height: number): void {
+  const max = Math.max(120, window.innerHeight - 160);
+  detailsHeight = Math.round(Math.min(Math.max(height, 90), max));
+  detailsEl.style.height = `${detailsHeight}px`;
+  schedule();
+}
+
+splitter.addEventListener('pointerdown', (event: PointerEvent) => {
+  const startY = event.clientY;
+  const startHeight = detailsEl.getBoundingClientRect().height;
+
+  splitter.setPointerCapture(event.pointerId);
+  splitter.classList.add('dragging');
+  event.preventDefault();
+
+  const onMove = (move: PointerEvent): void => {
+    // The pane is below the graph, so dragging up must make it taller.
+    applyDetailsHeight(startHeight - (move.clientY - startY));
+  };
+
+  const onUp = (): void => {
+    splitter.classList.remove('dragging');
+    splitter.removeEventListener('pointermove', onMove);
+    splitter.removeEventListener('pointerup', onUp);
+    splitter.removeEventListener('pointercancel', onUp);
+    saveViewState();
+  };
+
+  splitter.addEventListener('pointermove', onMove);
+  splitter.addEventListener('pointerup', onUp);
+  splitter.addEventListener('pointercancel', onUp);
+});
+
+// Double-clicking a sash to reset it is the convention everywhere else in VS Code.
+splitter.addEventListener('dblclick', () => {
+  applyDetailsHeight(260);
+  saveViewState();
+});
+
 function renderDetails(details: CommitDetails): void {
+  currentDetails = details;
   detailsEl.hidden = false;
+  splitter.hidden = false;
+  applyDetailsHeight(detailsHeight);
 
   const meta = document.createDocumentFragment();
 
@@ -270,40 +351,184 @@ function renderDetails(details: CommitDetails): void {
 
   detailBodyEl.replaceChildren(body);
 
-  const files = document.createDocumentFragment();
-  files.append(
+  renderFiles();
+}
+
+/** One entry in the changed-file list, at a given indent depth. */
+function fileRow(sha: string, file: FileChange, index: number, depth: number, label: string): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'file';
+  el.title = `${STATUS_LABEL[file.status] ?? file.status}: ${file.path}`;
+  el.style.paddingLeft = `${depth * 14 + 4}px`;
+
+  el.append(span(`status status-${file.status}`, file.status));
+
+  const path = document.createElement('span');
+  path.className = 'file-path';
+
+  if (file.oldPath !== null) {
+    appendPath(path, file.oldPath);
+    path.append(span('rename-arrow', ' → '));
+    appendPath(path, file.path);
+  } else if (depth === 0) {
+    appendPath(path, label);
+  } else {
+    // Inside a tree the folder is already on the row above, so only the name is worth repeating.
+    path.append(span('path-name', label));
+  }
+
+  el.append(path);
+  el.addEventListener('click', () => vscode.postMessage({ type: 'openDiff', sha, index }));
+  return el;
+}
+
+interface TreeNode {
+  /** Display name; a compacted chain keeps its slashes, e.g. `GitFlick/ViewModels`. */
+  name: string;
+  /** Full path, used as the collapse key. */
+  path: string;
+  dirs: Map<string, TreeNode>;
+  files: { file: FileChange; index: number }[];
+}
+
+function newNode(name: string, path: string): TreeNode {
+  return { name, path, dirs: new Map(), files: [] };
+}
+
+/**
+ * Fold a flat path list into directories, then collapse any chain of folders that holds nothing but
+ * one more folder - `GitFlick/ViewModels/x.cs` is three rows of almost no information otherwise.
+ * VS Code's own explorer does the same thing and calls it compact folders.
+ */
+function buildTree(files: readonly FileChange[]): TreeNode {
+  const root = newNode('', '');
+
+  files.forEach((file, index) => {
+    const parts = file.path.split('/');
+    const name = parts.pop() ?? file.path;
+    let node = root;
+    let acc = '';
+
+    for (const part of parts) {
+      acc = acc.length === 0 ? part : `${acc}/${part}`;
+      let next = node.dirs.get(part);
+
+      if (next === undefined) {
+        next = newNode(part, acc);
+        node.dirs.set(part, next);
+      }
+
+      node = next;
+    }
+
+    node.files.push({ file, index });
+  });
+
+  compact(root);
+  return root;
+}
+
+function compact(node: TreeNode): void {
+  for (const [key, child] of [...node.dirs]) {
+    let merged = child;
+
+    while (merged.dirs.size === 1 && merged.files.length === 0) {
+      const only = [...merged.dirs.values()][0] as TreeNode;
+      merged = {
+        name: `${merged.name}/${only.name}`,
+        path: only.path,
+        dirs: only.dirs,
+        files: only.files,
+      };
+    }
+
+    compact(merged);
+    node.dirs.set(key, merged);
+  }
+}
+
+function renderTree(sha: string, node: TreeNode, depth: number, out: DocumentFragment): void {
+  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const dir of dirs) {
+    const isCollapsed = collapsedDirs.has(dir.path);
+
+    const row = document.createElement('div');
+    row.className = 'folder';
+    row.style.paddingLeft = `${depth * 14 + 4}px`;
+    row.append(span('chevron', isCollapsed ? '▸' : '▾'), span('folder-name', dir.name));
+    row.addEventListener('click', () => {
+      if (isCollapsed) {
+        collapsedDirs.delete(dir.path);
+      } else {
+        collapsedDirs.add(dir.path);
+      }
+
+      renderFiles();
+    });
+
+    out.append(row);
+
+    if (!isCollapsed) {
+      renderTree(sha, dir, depth + 1, out);
+    }
+  }
+
+  for (const { file, index } of node.files) {
+    const name = file.path.split('/').pop() ?? file.path;
+    out.append(fileRow(sha, file, index, depth, name));
+  }
+}
+
+/** Redraw the changed-file list in whichever shape is currently selected. */
+function renderFiles(): void {
+  const details = currentDetails;
+
+  if (details === null) {
+    detailFilesEl.replaceChildren();
+    return;
+  }
+
+  const out = document.createDocumentFragment();
+
+  const heading = document.createElement('div');
+  heading.className = 'files-heading';
+  heading.append(
     span(
-      'files-heading',
+      'files-count',
       details.files.length === 1 ? '1 file changed' : `${details.files.length} files changed`,
     ),
   );
 
-  details.files.forEach((file: FileChange, index) => {
-    const el = document.createElement('div');
-    el.className = 'file';
-    el.title = `${STATUS_LABEL[file.status] ?? file.status}: ${file.path}`;
+  const toggle = document.createElement('span');
+  toggle.className = 'view-toggle';
 
-    el.append(span(`status status-${file.status}`, file.status));
+  for (const mode of ['tree', 'flat'] as const) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = mode;
+    button.className = fileView === mode ? 'active' : '';
+    button.addEventListener('click', () => {
+      fileView = mode;
+      saveViewState();
+      renderFiles();
+    });
 
-    const path = document.createElement('span');
-    path.className = 'file-path';
+    toggle.append(button);
+  }
 
-    if (file.oldPath !== null) {
-      appendPath(path, file.oldPath);
-      path.append(span('rename-arrow', ' → '));
-    }
+  heading.append(toggle);
+  out.append(heading);
 
-    appendPath(path, file.path);
-    el.append(path);
+  if (fileView === 'tree') {
+    renderTree(details.sha, buildTree(details.files), 0, out);
+  } else {
+    details.files.forEach((file, index) => {
+      out.append(fileRow(details.sha, file, index, 0, file.path));
+    });
+  }
 
-    el.addEventListener('click', () =>
-      vscode.postMessage({ type: 'openDiff', sha: details.sha, index }),
-    );
-
-    files.append(el);
-  });
-
-  detailFilesEl.replaceChildren(files);
+  detailFilesEl.replaceChildren(out);
 }
 
 function drawGraph(): void {
@@ -418,6 +643,9 @@ function reset(): void {
   spacer.style.height = '0px';
   rowsEl.replaceChildren();
   detailsEl.hidden = true;
+  splitter.hidden = true;
+  currentDetails = null;
+  collapsedDirs.clear();
   header.classList.remove('error');
   statusEl.textContent = 'loading…';
 }
@@ -557,4 +785,5 @@ document.addEventListener('keydown', (event) => {
   event.preventDefault();
 });
 
+restoreViewState();
 vscode.postMessage({ type: 'ready' });
