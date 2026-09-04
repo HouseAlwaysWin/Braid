@@ -555,3 +555,74 @@ body {
 #detail-meta {
   padding-right: 28px;
 }
+
+/*
+ * The in-progress banner. Loud on purpose: while git is mid-rebase every other action means
+ * something different, so this is not a status line to be skimmed past.
+ */
+#operation {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  background: var(--vscode-inputValidation-warningBackground, #352a05);
+  border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, #966c1e);
+  color: var(--vscode-inputValidation-warningForeground, var(--braid-fg));
+}
+
+.operation-headline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.operation-what {
+  font-weight: 600;
+}
+
+.operation-controls {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.operation-controls button {
+  padding: 2px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  background: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.12));
+  color: var(--vscode-button-secondaryForeground, inherit);
+  font: inherit;
+  cursor: pointer;
+}
+
+.operation-controls button:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.2));
+}
+
+/* Disabled rather than hidden, with the reason on hover: a control that vanishes reads as a bug. */
+.operation-controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.operation-controls button.destructive:hover:not(:disabled) {
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+}
+
+.operation-conflicts {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 0.92em;
+}
+
+.operation-conflicts-heading {
+  opacity: 0.85;
+}
+
+.operation-conflict {
+  font-family: var(--vscode-editor-font-family);
+  text-decoration: underline;
+  cursor: pointer;
+}

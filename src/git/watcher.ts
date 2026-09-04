@@ -22,6 +22,7 @@ import type { FSWatcher } from 'node:fs';
 
 import type { Git } from './exec.ts';
 import type { RepoInfo } from './discovery.ts';
+import { readOperation } from './repoState.ts';
 
 /** Churn that says nothing about what the user would see. */
 export function isNoise(path: string): boolean {

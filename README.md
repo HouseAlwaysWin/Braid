@@ -21,6 +21,8 @@ Working:
 - Auto-refresh: commit from a terminal and the graph reloads itself
 - Right-click to act: checkout (branch, remote branch, or a commit detached), create and rename
   branches, create lightweight or annotated tags, delete branches and tags
+- Merge and rebase, with a banner while either is unfinished: Continue, Skip, Abort, and the
+  conflicted files as links into VS Code's merge editor
 - Cherry-pick, revert, and reset (soft, mixed or hard) from any commit
 - Stashes appear in the graph, with apply, pop and drop on the row and a Stash Changes command
 - Ref filtering from the sidebar: untick branches, remotes or tags to keep them out of the walk
@@ -28,8 +30,7 @@ Working:
   changed-file list - both remembered across panel reloads
 
 Write operations are arriving one tier at a time. Anything that could destroy uncommitted work
-names the files it would destroy before asking; nothing passes `--force` by default. Still to come: merge and rebase,
-then fetch/pull/push.
+names the files it would destroy before asking; nothing passes `--force` by default. Still to come: fetch, pull and push.
 
 ## Where to find it
 

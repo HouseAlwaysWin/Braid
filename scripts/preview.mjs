@@ -53,6 +53,21 @@ await loader.load(
 
 messages.push({ type: 'done', total: loader.rowCount, elapsedMs: 0 });
 
+// A stand-in for a stopped merge, so the in-progress banner is something that can be looked at.
+if (process.argv.includes('--conflict')) {
+  messages.push({
+    type: 'operation',
+    operation: 'merge',
+    description: 'a merge',
+    conflicted: ['GitFlick/ViewModels/HistoryViewModel.cs', 'CHANGELOG.md'],
+    controls: [
+      { id: 'braid.continueOperation', label: 'Continue', group: 'operation', destructive: false, disabledReason: 'Resolve the conflicts first' },
+      { id: 'braid.skipOperation', label: 'Skip', group: 'operation', destructive: false, disabledReason: 'A merge cannot skip a commit' },
+      { id: 'braid.abortOperation', label: 'Abort', group: 'danger', destructive: false, disabledReason: null },
+    ],
+  });
+}
+
 // Replay a selection too, so the details pane is part of what gets looked at rather than something
 // only ever seen inside VS Code.
 // Pick the busiest of the first few commits, so the file tree has something to be a tree about.

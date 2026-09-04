@@ -261,6 +261,85 @@ function refFullName(kind: string, name: string): string {
   }
 }
 
+const operationEl = document.getElementById('operation') as HTMLElement;
+
+/**
+ * The banner for whatever git is halfway through.
+ *
+ * It is deliberately loud and deliberately at the top: an unfinished rebase changes what every
+ * other action means, and a graph that draws history without mentioning it is how someone ends up
+ * several commands deep in a state they did not know they were in.
+ *
+ * Conflicted files are listed and clickable. Braid does not resolve them - VS Code's merge editor
+ * is better at that than anything that would fit here - so clicking one hands it over.
+ */
+function renderOperation(
+  operation: string,
+  description: string,
+  conflicted: readonly string[],
+  controls: readonly MenuItem[],
+): void {
+  if (operation === 'none') {
+    operationEl.hidden = true;
+    operationEl.replaceChildren();
+    schedule();
+    return;
+  }
+
+  const headline = document.createElement('div');
+  headline.className = 'operation-headline';
+  headline.append(span('operation-what', `You are in the middle of ${description}.`));
+
+  const buttons = document.createElement('span');
+  buttons.className = 'operation-controls';
+
+  for (const control of controls) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = control.label;
+    button.className = control.destructive ? 'destructive' : '';
+
+    if (control.disabledReason === null) {
+      button.addEventListener('click', () =>
+        vscode.postMessage({ type: 'runAction', id: control.id, target: { kind: 'repo' } }),
+      );
+    } else {
+      button.disabled = true;
+      button.title = control.disabledReason;
+    }
+
+    buttons.append(button);
+  }
+
+  headline.append(buttons);
+  operationEl.replaceChildren(headline);
+
+  if (conflicted.length > 0) {
+    const list = document.createElement('div');
+    list.className = 'operation-conflicts';
+    list.append(
+      span(
+        'operation-conflicts-heading',
+        `${conflicted.length} ${conflicted.length === 1 ? 'file needs' : 'files need'} resolving:`,
+      ),
+    );
+
+    for (const path of conflicted) {
+      const entry = document.createElement('span');
+      entry.className = 'operation-conflict';
+      entry.textContent = path;
+      entry.title = `Open ${path} in the merge editor`;
+      entry.addEventListener('click', () => vscode.postMessage({ type: 'openConflict', path }));
+      list.append(entry);
+    }
+
+    operationEl.append(list);
+  }
+
+  operationEl.hidden = false;
+  schedule();
+}
+
 let menuEl: HTMLElement | null = null;
 
 function closeMenu(): void {
@@ -869,6 +948,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
 
     case 'menu':
       renderMenu(message.target, message.items, message.x, message.y);
+      break;
+
+    case 'operation':
+      renderOperation(message.operation, message.description, message.conflicted, message.controls);
       break;
 
     case 'reloading':

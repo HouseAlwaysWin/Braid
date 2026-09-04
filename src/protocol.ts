@@ -55,6 +55,19 @@ export type HostMessage =
       readonly x: number;
       readonly y: number;
     }
+  /**
+   * What git is halfway through, if anything. Sent on every reload: a graph that shows history
+   * while hiding an unfinished rebase is how people end up several commands deep in something they
+   * did not know they were in.
+   */
+  | {
+      readonly type: 'operation';
+      /** 'none' when nothing is in progress. */
+      readonly operation: string;
+      readonly description: string;
+      readonly conflicted: readonly string[];
+      readonly controls: readonly MenuItem[];
+    }
   | { readonly type: 'error'; readonly message: string };
 
 export type WebviewMessage =
@@ -67,4 +80,6 @@ export type WebviewMessage =
   | { readonly type: 'copy'; readonly text: string }
   /** Right-click: the host decides what is on the menu, because availability depends on repo state. */
   | { readonly type: 'requestMenu'; readonly target: Target; readonly x: number; readonly y: number }
-  | { readonly type: 'runAction'; readonly id: string; readonly target: Target };
+  | { readonly type: 'runAction'; readonly id: string; readonly target: Target }
+  /** Hand a conflicted file to VS Code, whose merge editor is better at this than anything here. */
+  | { readonly type: 'openConflict'; readonly path: string };

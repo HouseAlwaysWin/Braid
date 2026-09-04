@@ -22,6 +22,7 @@ export const BODY_MARKUP = `<header id="header">
     <input id="search-input" type="search" placeholder="Search commits…" spellcheck="false">
   </span>
 </header>
+<section id="operation" hidden></section>
 <main id="main">
   <div id="viewport"><div id="spacer"></div><div id="rows"></div></div>
   <canvas id="graph"></canvas>

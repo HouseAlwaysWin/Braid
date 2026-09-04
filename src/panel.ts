@@ -19,7 +19,7 @@ import { searchArgs } from './git/search.ts';
 import type { HostMessage, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
 import { RepoLock } from './git/lock.ts';
-import { readRepoState } from './git/repoState.ts';
+import { describeOperation, readRepoState } from './git/repoState.ts';
 import { listStashes } from './git/stash.ts';
 import { mapGitError } from './git/errors.ts';
 import type { ActionContext, ActionUi, Target } from './actions/registry.ts';
@@ -276,6 +276,9 @@ export class BraidPanel {
       case 'runAction':
         await this.runAction(message.id, message.target);
         break;
+      case 'openConflict':
+        await this.openConflict(message.path);
+        break;
       default:
         break;
     }
@@ -409,6 +412,29 @@ export class BraidPanel {
     );
   }
 
+  /**
+   * Hand a conflicted file to VS Code. Its merge editor opens by itself for a file with conflict
+   * markers, and it is better at resolving them than anything that would fit in the graph.
+   */
+  private async openConflict(path: string): Promise<void> {
+    const uri = vscode.Uri.joinPath(vscode.Uri.file(this.repo.root), path);
+    await vscode.commands.executeCommand('vscode.open', uri);
+  }
+
+  /**
+   * Tell the view what git is halfway through. Sent on every reload rather than only when it
+   * changes, because the view is rebuilt from scratch each time the tab is shown.
+   */
+  private postOperation(state: Awaited<ReturnType<typeof readRepoState>>): void {
+    this.post({
+      type: 'operation',
+      operation: state.operation,
+      description: describeOperation(state.operation) ?? '',
+      conflicted: state.files.filter((file) => file.conflicted).map((file) => file.path),
+      controls: buildMenu({ kind: 'repo' }, state).filter((item) => item.group !== 'stash'),
+    });
+  }
+
   private post(message: HostMessage): void {
     void this.panel.webview.postMessage(message);
   }
@@ -437,6 +463,12 @@ export class BraidPanel {
     // them. Cheap enough to re-read on every reload; a repository has a handful, not thousands.
     const stashList = await listStashes(this.git, this.repo).catch(() => []);
     const stashes = new Map(stashList.map((stash) => [stash.sha, stash.name]));
+
+    // Before the history, not after: if git is mid-rebase the user should be told that while the
+    // walk is still running, not once it finishes.
+    await readRepoState(this.git, this.repo)
+      .then((state) => this.postOperation(state))
+      .catch(() => undefined);
 
     /*
      * Fingerprint the refs alongside the walk, not before it. Awaiting here put two more process

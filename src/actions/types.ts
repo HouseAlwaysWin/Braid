@@ -19,9 +19,12 @@ import { describeOperation } from '../git/repoState.ts';
 /**
  * How much trouble an action can cause, which decides how much ceremony it gets.
  *
- * The split is by what git can undo, not by how alarming the command sounds:
- * 1 - reversible, or git refuses when it would not be. No confirmation.
- * 2 - changes where a ref points, but the old position stays in the reflog. Confirm.
+ * The split is by what git can undo, not by how alarming the command sounds. The line between 1
+ * and 2 is whether commits stop being reachable: cherry-pick, revert and merge all move a branch,
+ * but only forwards, so nothing goes missing.
+ *
+ * 1 - adds to history, or git refuses when it would lose something. No confirmation.
+ * 2 - makes commits unreachable, though the reflog still holds them. Confirm.
  * 3 - can destroy uncommitted work, which nothing recovers. Confirm, and name what is lost.
  */
 export const Tier = { Safe: 1, Confirm: 2, Destructive: 3 } as const;

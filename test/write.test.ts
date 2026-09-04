@@ -679,3 +679,142 @@ test('soft and mixed resets to the current commit are not offered', async () => 
   assert.equal(reason('braid.resetHard'), null);
   assert.equal(reason('braid.cherryPick'), 'Already the current commit');
 });
+
+const repoTarget = (): Target => ({ kind: 'repo' });
+
+/** main and conflicting both change b.txt, so merging them cannot succeed. */
+function makeConflictingRepo(): string {
+  const dir = makeRepo();
+
+  sh(dir, 'checkout', '-q', '-b', 'conflicting', 'main');
+  writeFileSync(join(dir, 'b.txt'), 'theirs\n');
+  sh(dir, 'add', '-A');
+  sh(dir, 'commit', '-q', '-m', 'conflicting change');
+
+  return dir;
+}
+
+test('merging a branch brings its commits in', async () => {
+  const dir = makeRepo();
+
+  const result = await run(dir, 'braid.merge', branch('feature'));
+
+  assert.equal(result.ran, true);
+  assert.match(result.message, /Merged 1 commit/);
+  assert.equal(readFileSync(join(dir, 'b.txt'), 'utf8'), 'two\n');
+});
+
+test('merging something already merged does nothing and says so', async () => {
+  const dir = makeRepo();
+  sh(dir, 'merge', '--no-edit', '-q', 'feature');
+  const head = sh(dir, 'rev-parse', 'HEAD').trim();
+
+  const result = await run(dir, 'braid.merge', branch('feature'));
+
+  assert.equal(result.ran, false);
+  assert.match(result.message, /already in main/);
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), head, 'and makes no empty commit');
+});
+
+test('rebase says how many commits it will rewrite before doing it', async () => {
+  const dir = makeConflictingRepo();
+  sh(dir, 'checkout', '-q', 'main');
+  writeFileSync(join(dir, 'c.txt'), 'main moves on\n');
+  sh(dir, 'add', '-A');
+  sh(dir, 'commit', '-q', '-m', 'on main');
+
+  sh(dir, 'checkout', '-q', 'feature');
+  const ui = fakeUi();
+
+  await run(dir, 'braid.rebase', branch('main'), ui);
+
+  assert.match(ui.confirmations[0] ?? '', /1 commit on feature will be rewritten/);
+  assert.match(ui.confirmations[0] ?? '', /originals stay in the reflog/);
+  assert.equal(sh(dir, 'rev-list', '--count', 'HEAD').trim(), '3', 'feature now sits on top of main');
+});
+
+test('a conflicted merge is reported as in progress, with the files that need resolving', async () => {
+  const dir = makeConflictingRepo();
+  sh(dir, 'checkout', '-q', 'main');
+  sh(dir, 'merge', '--no-edit', '-q', 'feature');
+
+  // main has b.txt as 'two', conflicting has it as 'theirs'.
+  try {
+    sh(dir, 'merge', 'conflicting');
+  } catch {
+    // Expected.
+  }
+
+  const repo = await open(dir);
+  const state = await readRepoState(git, repo);
+
+  assert.equal(state.operation, Operation.Merge);
+  assert.deepEqual(
+    state.files.filter((f) => f.conflicted).map((f) => f.path),
+    ['b.txt'],
+  );
+
+  const controls = buildMenu(repoTarget(), state);
+  const reason = (id: string) => controls.find((i) => i.id === id)?.disabledReason;
+
+  assert.equal(reason('braid.continueOperation'), 'Resolve the conflicts first');
+  assert.equal(reason('braid.skipOperation'), 'A merge cannot skip a commit');
+  assert.equal(reason('braid.abortOperation'), null, 'abort is always the way out');
+});
+
+test('aborting puts the repository back where it started', async () => {
+  const dir = makeConflictingRepo();
+  sh(dir, 'checkout', '-q', 'main');
+  sh(dir, 'merge', '--no-edit', '-q', 'feature');
+  const before = sh(dir, 'rev-parse', 'HEAD').trim();
+
+  try {
+    sh(dir, 'merge', 'conflicting');
+  } catch {
+    // Expected.
+  }
+
+  const result = await run(dir, 'braid.abortOperation', repoTarget());
+
+  assert.equal(result.ran, true);
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), before);
+  assert.equal(await readOperation((await open(dir)).gitDir), Operation.None);
+  assert.equal(sh(dir, 'status', '--porcelain').trim(), '', 'and leaves a clean tree');
+});
+
+test('continue finishes a merge once the conflict is resolved', async () => {
+  const dir = makeConflictingRepo();
+  sh(dir, 'checkout', '-q', 'main');
+  sh(dir, 'merge', '--no-edit', '-q', 'feature');
+
+  try {
+    sh(dir, 'merge', 'conflicting');
+  } catch {
+    // Expected.
+  }
+
+  writeFileSync(join(dir, 'b.txt'), 'resolved by hand\n');
+  sh(dir, 'add', 'b.txt');
+
+  // `git merge --continue` opens an editor for the message by default; this passing is the proof
+  // that the write environment's GIT_EDITOR override works.
+  const result = await run(dir, 'braid.continueOperation', repoTarget());
+
+  assert.equal(result.ran, true);
+  assert.equal(await readOperation((await open(dir)).gitDir), Operation.None);
+  assert.equal(sh(dir, 'rev-list', '--parents', '-n', '1', 'HEAD').trim().split(' ').length, 3);
+});
+
+test('the controls are all unavailable when nothing is in progress', async () => {
+  const repo = await open(makeRepo());
+  const state = await readRepoState(git, repo);
+  const controls = buildMenu(repoTarget(), state);
+
+  for (const id of ['braid.continueOperation', 'braid.abortOperation', 'braid.skipOperation']) {
+    assert.equal(
+      controls.find((i) => i.id === id)?.disabledReason,
+      'Nothing in progress',
+      `${id} should be unavailable`,
+    );
+  }
+});

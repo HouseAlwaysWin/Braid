@@ -17,6 +17,7 @@ import type { RepoState } from '../git/repoState.ts';
 import { workAtRisk } from '../git/repoState.ts';
 import { BRANCH_ACTIONS } from './branches.ts';
 import { COMMIT_ACTIONS } from './commit.ts';
+import { MERGE_ACTIONS } from './merge.ts';
 import { STASH_ACTIONS } from './stash.ts';
 
 export type {
@@ -32,7 +33,12 @@ export type {
 export { Tier } from './types.ts';
 
 /** Menu order follows this list, so destructive things stay at the bottom. */
-export const ACTIONS: readonly Action[] = [...BRANCH_ACTIONS, ...COMMIT_ACTIONS, ...STASH_ACTIONS];
+export const ACTIONS: readonly Action[] = [
+  ...BRANCH_ACTIONS,
+  ...COMMIT_ACTIONS,
+  ...MERGE_ACTIONS,
+  ...STASH_ACTIONS,
+];
 
 export function buildMenu(target: Target, state: RepoState): MenuItem[] {
   return ACTIONS.filter((action) => action.appliesTo(target)).map((action) => ({
