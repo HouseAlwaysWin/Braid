@@ -21,14 +21,15 @@ Working:
 - Auto-refresh: commit from a terminal and the graph reloads itself
 - Right-click to act: checkout (branch, remote branch, or a commit detached), create and rename
   branches, create lightweight or annotated tags, delete branches and tags
+- Cherry-pick, revert, and reset (soft, mixed or hard) from any commit
 - Stashes appear in the graph, with apply, pop and drop on the row and a Stash Changes command
 - Ref filtering from the sidebar: untick branches, remotes or tags to keep them out of the walk
 - Draggable split between the graph and the details pane, and a tree/flat toggle for the
   changed-file list - both remembered across panel reloads
 
 Write operations are arriving one tier at a time. Anything that could destroy uncommitted work
-names the files it would destroy before asking; nothing passes `--force` by default. Still to come:
-cherry-pick/revert/reset, merge and rebase, then fetch/pull/push.
+names the files it would destroy before asking; nothing passes `--force` by default. Still to come: merge and rebase,
+then fetch/pull/push.
 
 ## Where to find it
 
