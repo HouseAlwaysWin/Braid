@@ -163,6 +163,15 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     return this.query;
   }
 
+  /** Every ref, for a picker to offer as completions. */
+  listRefs(): { label: string; refName: string; group: string }[] {
+    return this.refs.map((ref) => ({
+      label: ref.label,
+      refName: ref.refName,
+      group: ref.group.label,
+    }));
+  }
+
   getChildren(node?: Node): Node[] {
     const refs = this.visible();
 

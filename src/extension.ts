@@ -136,18 +136,50 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('braid.showAllAuthors', () => authors.showAll()),
 
-    // A tree view cannot host a text field, so the query is typed into VS Code's own input and the
-    // list narrows behind it.
-    vscode.commands.registerCommand('braid.filterRefs', async () => {
-      const query = await vscode.window.showInputBox({
-        title: 'Filter branches and tags',
-        prompt: 'Substring to match; leave empty to show all',
-        value: refs.filterText,
+    /*
+     * A tree view cannot host a text field, so the query is typed into one of VS Code's own inputs.
+     * A quick pick rather than an input box, for two reasons: it offers the ref names as you type
+     * instead of asking you to remember them, and it can react to every keystroke - so the list in
+     * the sidebar narrows live behind it rather than only once you press Enter.
+     */
+    vscode.commands.registerCommand('braid.filterRefs', () => {
+      const picker = vscode.window.createQuickPick<vscode.QuickPickItem & { ref?: string }>();
+      const before = refs.filterText;
+
+      picker.title = 'Filter branches and tags';
+      picker.placeholder = 'Type to narrow the list, or pick one';
+      picker.value = before;
+      picker.matchOnDescription = true;
+      picker.matchOnDetail = true;
+      picker.items = refs.listRefs().map((ref) => ({
+        label: ref.label,
+        description: ref.group,
+        detail: ref.refName,
+        ref: ref.label,
+      }));
+
+      let accepted = false;
+
+      picker.onDidChangeValue((value) => refs.setQuery(value));
+
+      picker.onDidAccept(() => {
+        accepted = true;
+        // Picking an entry filters to exactly it; accepting with nothing highlighted keeps whatever
+        // was typed, which is how you filter to a group of refs rather than one.
+        refs.setQuery(picker.selectedItems[0]?.ref ?? picker.value);
+        picker.hide();
       });
 
-      if (query !== undefined) {
-        refs.setQuery(query);
-      }
+      picker.onDidHide(() => {
+        // Escape undoes the live filtering. Leaving it applied would make cancelling do something.
+        if (!accepted) {
+          refs.setQuery(before);
+        }
+
+        picker.dispose();
+      });
+
+      picker.show();
     }),
 
     vscode.commands.registerCommand('braid.stash', () => {

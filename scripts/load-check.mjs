@@ -68,7 +68,15 @@ const problems = [];
 const contentProviders = new Map();
 const diffsOpened = [];
 let statusBarItem = null;
-let refFilterAnswer = 'side';
+let quickPick = null;
+
+/** Drive the ref filter picker the way a user would: type, then accept. */
+async function typeIntoRefFilter(text) {
+  await commands.get('braid.filterRefs')();
+  quickPick.picker.value = text;
+  quickPick.handlers.change?.(text);
+  quickPick.handlers.accept?.();
+}
 const treeProviders = new Map();
 const checkboxHandlers = new Map();
 const treeViews = new Map();
@@ -122,7 +130,20 @@ const vscodeStub = {
     showInformationMessage: (m) => problems.push(`unexpected info message: ${m}`),
     showWarningMessage: (m) => problems.push(`unexpected warning: ${m}`),
     setStatusBarMessage: () => ({ dispose() {} }),
-    showInputBox: async () => refFilterAnswer,
+    createQuickPick: () => {
+      const handlers = {};
+      const picker = {
+        title: '', placeholder: '', value: '', items: [], selectedItems: [],
+        matchOnDescription: false, matchOnDetail: false,
+        onDidChangeValue: (fn) => { handlers.change = fn; return { dispose() {} }; },
+        onDidAccept: (fn) => { handlers.accept = fn; return { dispose() {} }; },
+        onDidHide: (fn) => { handlers.hide = fn; return { dispose() {} }; },
+        show() { quickPick = { picker, handlers }; },
+        hide() { handlers.hide?.(); },
+        dispose() {},
+      };
+      return picker;
+    },
     createTreeView: (id, options) => {
       treeProviders.set(id, options.treeDataProvider);
       const view = {
@@ -556,7 +577,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 {
   const before = treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length;
 
-  await commands.get('braid.filterRefs')();
+  await typeIntoRefFilter('side');
   const filtered = treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g));
 
   console.log(`\nref filter     : ${before} refs -> ${filtered.length} matching "side"`);
@@ -576,12 +597,42 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
     problems.push('a filtered group did not expand to show its matches');
   }
 
-  refFilterAnswer = '';
-  await commands.get('braid.filterRefs')();
+  await typeIntoRefFilter('');
 
   if (treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length !== before) {
     problems.push('clearing the ref filter did not restore the listing');
   }
+
+  // The picker offers the ref names, which is the point of it being a picker.
+  await commands.get('braid.filterRefs')();
+  const offered = quickPick.picker.items.map((item) => item.label);
+  console.log('  completions  :', offered.join(', '));
+
+  if (offered.length !== before) {
+    problems.push(`the picker offered ${offered.length} refs, expected ${before}`);
+  }
+
+  // Picking one filters to exactly it, rather than to whatever was typed.
+  quickPick.picker.selectedItems = [quickPick.picker.items.find((i) => i.label === 'side')];
+  quickPick.handlers.accept?.();
+
+  if (treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length !== 1) {
+    problems.push('picking a ref did not filter to it');
+  }
+
+  // Escape has to undo the live filtering, or cancelling would still change something.
+  await commands.get('braid.filterRefs')();
+  quickPick.handlers.change?.('nothing-matches-this');
+  quickPick.handlers.hide?.();
+
+  const afterEscape = treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length;
+  console.log(`  escape       : back to filtering "side" (${afterEscape} ref)`);
+
+  if (afterEscape !== 1) {
+    problems.push(`escaping the picker left the filter changed (${afterEscape} refs listed)`);
+  }
+
+  await typeIntoRefFilter('');
 }
 
 {
