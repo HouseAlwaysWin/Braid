@@ -144,13 +144,16 @@ function renderRows(): void {
     el.style.paddingLeft = `${graphWidth + 8}px`;
 
     if (row.stash !== undefined) {
-      el.append(span('ref stash', row.stash));
+      const badge = span('ref stash', row.stash);
+      badge.title = `${row.stash}: ${row.subject}`;
+      el.append(badge);
     }
 
     for (const ref of row.refs) {
       const badge = document.createElement('span');
       badge.className = `ref ${ref.kind}`;
       badge.textContent = ref.name;
+      badge.title = refFullName(ref.kind, ref.name);
       badge.addEventListener('contextmenu', (event) => {
         event.stopPropagation();
         openMenu(event, {
@@ -167,11 +170,13 @@ function renderRows(): void {
     const subject = document.createElement('span');
     subject.className = 'subject';
     subject.textContent = row.subject;
+    subject.title = row.subject;
     el.append(subject);
 
     const author = document.createElement('span');
     author.className = 'author';
     author.textContent = row.author;
+    author.title = row.author;
     el.append(author);
 
     const date = document.createElement('span');
@@ -203,7 +208,19 @@ function renderRows(): void {
 
 /** Move the selection, keep it on screen, and ask the host for that commit's details. */
 function select(index: number): void {
-  if (index < 0 || index >= rows.length || index === selected) {
+  if (index < 0 || index >= rows.length) {
+    return;
+  }
+
+  if (index === selected) {
+    // Clicking the row that is already selected is how you ask for the pane back after closing it.
+    // Without this, closing the pane makes that one row unclickable until you pick another.
+    if (detailsEl.hidden && currentDetails !== null) {
+      detailsEl.hidden = false;
+      splitter.hidden = false;
+      applyDetailsHeight(detailsHeight);
+    }
+
     return;
   }
 
@@ -408,6 +425,20 @@ splitter.addEventListener('dblclick', () => {
   applyDetailsHeight(260);
   saveViewState();
 });
+
+/**
+ * Put the details pane away.
+ *
+ * The selection stays where it is - closing the pane is about wanting the graph's height back, not
+ * about deselecting - so clicking another commit brings it straight back.
+ */
+function closeDetails(): void {
+  detailsEl.hidden = true;
+  splitter.hidden = true;
+  schedule();
+}
+
+(document.getElementById('detail-close') as HTMLElement).addEventListener('click', closeDetails);
 
 function renderDetails(details: CommitDetails): void {
   currentDetails = details;
@@ -920,10 +951,20 @@ document.addEventListener('keydown', (event) => {
   const page = Math.max(1, Math.floor(viewport.clientHeight / rowHeight) - 1);
   const from = selected < 0 ? -1 : selected;
 
-  if (event.key === 'Escape' && menuEl !== null) {
-    closeMenu();
-    event.preventDefault();
-    return;
+  if (event.key === 'Escape') {
+    // Innermost first: the menu, then the pane. Closing both at once would be one keystroke doing
+    // two things the user did not ask for.
+    if (menuEl !== null) {
+      closeMenu();
+      event.preventDefault();
+      return;
+    }
+
+    if (!detailsEl.hidden) {
+      closeDetails();
+      event.preventDefault();
+      return;
+    }
   }
 
   switch (event.key) {

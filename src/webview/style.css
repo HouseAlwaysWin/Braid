@@ -524,3 +524,34 @@ body {
   border-color: var(--vscode-charts-purple, #b180d7);
   font-family: var(--vscode-editor-font-family);
 }
+
+/* The details pane needs to be a positioning context for its close button. */
+#details {
+  position: relative;
+}
+
+#detail-close {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#detail-close:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  color: var(--braid-fg);
+}
+
+/* Keep the metadata clear of the button rather than letting a long hash run under it. */
+#detail-meta {
+  padding-right: 28px;
+}

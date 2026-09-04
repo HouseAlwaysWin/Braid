@@ -28,6 +28,7 @@ export const BODY_MARKUP = `<header id="header">
 </main>
 <div id="splitter" hidden role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
 <section id="details" hidden>
+  <button id="detail-close" type="button" title="Close (Esc)" aria-label="Close details">✕</button>
   <div id="detail-meta"></div>
   <pre id="detail-body"></pre>
   <div id="detail-files"></div>
