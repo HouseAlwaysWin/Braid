@@ -140,6 +140,11 @@
           "maximum": 5000,
           "description": "Quiet period after repository changes before the graph reloads."
         },
+        "braid.authorColors": {
+          "type": "boolean",
+          "default": true,
+          "description": "Give each author their own colour in the commit list. Always off in high contrast themes."
+        },
         "braid.statusBar.enabled": {
           "type": "boolean",
           "default": true,
@@ -175,12 +180,13 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/load-check.mjs --watch",
+    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/load-check.mjs --watch",
     "vscode:prepublish": "node esbuild.mjs --production",
     "smoke": "node scripts/smoke.mjs",
     "load-check": "node scripts/load-check.mjs",
     "package": "vsce package --no-dependencies",
     "icon-check": "node scripts/icon-check.mjs",
+    "color-check": "node scripts/color-check.mjs",
     "test:unit": "node --test \"test/**/*.test.ts\""
   },
   "devDependencies": {

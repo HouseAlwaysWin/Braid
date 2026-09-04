@@ -28,6 +28,7 @@ Working:
 - Two sidebar filters: untick branches, remotes or tags to keep them out of the walk, and tick
   authors to show only theirs. Both narrow what `git log` walks rather than hiding rows
 - A text filter for the branch list itself, for repositories with more refs than fit on screen
+- Each author gets their own colour, derived from the name so it never shifts as pages stream in
 - Draggable split between the graph and the details pane, and a tree/flat toggle for the
   changed-file list - both remembered across panel reloads
 
@@ -86,6 +87,7 @@ npm install
 npm run build      # or: npm run watch
 npm test           # build, unit tests, then a full end-to-end run against a throwaway repo
 npm run typecheck
+npm run color-check  # contrast and separation of the author tints, in both themes
 ```
 
 Press <kbd>F5</kbd> to launch an Extension Development Host.

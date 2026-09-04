@@ -34,6 +34,8 @@ export type HostMessage =
       readonly repoName: string;
       readonly repoRoot: string;
       readonly rowHeight: number;
+      /** Whether author names are tinted per author. */
+      readonly authorColors: boolean;
       /** Set when the repository is anything other than an ordinary clone, for the header. */
       readonly kind: string | null;
     }

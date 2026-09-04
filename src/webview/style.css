@@ -20,6 +20,26 @@
   --braid-lane-7: var(--vscode-charts-blue, #3794ff);
   --braid-lane-8: var(--vscode-charts-green, #89d185);
   --braid-lane-9: var(--vscode-charts-purple, #b180d7);
+
+  /*
+   * Author tint. The hue is per name (see authorColor.ts); the lightness and chroma are per theme
+   * and live here, so all twelve hues land at the same perceived lightness. That is the whole
+   * reason this is oklch and not a list of hex colours: oklch's L is perceptual, so one value
+   * gives every hue the same readability, and the author column keeps the quiet weight it had as
+   * grey text instead of twelve colours shouting at different volumes.
+   *
+   * These are dark-theme values. `scripts/color-check.mjs` measures what they actually produce.
+   */
+  --braid-author-hue: 0;
+  --braid-author-l: 70%;
+  --braid-author-c: 0.105;
+}
+
+/* A light theme is not a dark theme inverted: readable text on white has to be darker *and* can
+ * carry more chroma before it looks garish. */
+body.vscode-light {
+  --braid-author-l: 55%;
+  --braid-author-c: 0.095;
 }
 
 html,
@@ -140,6 +160,23 @@ body {
   max-width: 16ch;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/*
+ * Opt-in by class rather than opt-out, so the plain grey is what shows if the hue never arrives.
+ * The other way round, a missing `--braid-author-hue` would paint every name the same pink.
+ */
+body.author-tint .author {
+  color: oklch(var(--braid-author-l) var(--braid-author-c) var(--braid-author-hue));
+}
+
+/*
+ * High contrast themes exist to guarantee a contrast floor, and the user picked one on purpose.
+ * Tinting names would trade away the one thing they asked for, so there it stays off - including
+ * `vscode-high-contrast-light`, which VS Code stamps with both classes.
+ */
+body.vscode-high-contrast.author-tint .author {
+  color: var(--vscode-descriptionForeground);
 }
 
 .date,

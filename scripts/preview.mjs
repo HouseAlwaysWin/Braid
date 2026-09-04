@@ -161,7 +161,7 @@ const html = `<!DOCTYPE html>
 <style>:root {\n${vars}\n}</style>
 <link href="style.css" rel="stylesheet">
 </head>
-<body>
+<body class="${light ? 'vscode-light' : 'vscode-dark'}">
 ${BODY_MARKUP}
 <script>
   const sent = window.__sent = [];
@@ -202,6 +202,7 @@ ${BODY_MARKUP}
     repoName: repo.root.split('/').pop(),
     repoRoot: repo.root,
     rowHeight: 24,
+    authorColors: true,
     kind: repo.isBare ? 'bare' : repo.isLinkedWorktree ? 'linked worktree' : null,
   })};
   function replay() {

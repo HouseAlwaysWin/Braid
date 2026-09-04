@@ -20,6 +20,7 @@ import type { CommitDetails, FileChange } from '../git/details.ts';
 import type { SearchMode } from '../git/search.ts';
 import type { MenuItem, Target } from '../actions/registry.ts';
 import type { HostMessage, Row, WebviewMessage } from '../protocol.ts';
+import { authorHue } from './authorColor.ts';
 
 interface VsCodeApi {
   postMessage(message: WebviewMessage): void;
@@ -177,6 +178,8 @@ function renderRows(): void {
     author.className = 'author';
     author.textContent = row.author;
     author.title = row.author;
+    // Only the hue: the stylesheet holds the lightness, so the tint follows the theme.
+    author.style.setProperty('--braid-author-hue', `${authorHue(row.author)}`);
     el.append(author);
 
     const date = document.createElement('span');
@@ -918,6 +921,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         ? message.repoName
         : `${message.repoName}  (${message.kind})`;
       titleEl.title = message.repoRoot;
+      document.body.classList.toggle('author-tint', message.authorColors);
       palette = readPalette();
       break;
 

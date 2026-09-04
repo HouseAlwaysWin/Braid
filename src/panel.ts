@@ -462,6 +462,7 @@ export class BraidPanel {
       repoName: this.repo.root.split('/').pop() ?? this.repo.root,
       repoRoot: this.repo.root,
       rowHeight: config.get<number>('rowHeight', 24),
+      authorColors: config.get<boolean>('authorColors', true),
       kind: describe(this.repo),
     });
 
