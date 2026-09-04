@@ -25,7 +25,9 @@ Working:
   conflicted files as links into VS Code's merge editor
 - Cherry-pick, revert, and reset (soft, mixed or hard) from any commit
 - Stashes appear in the graph, with apply, pop and drop on the row and a Stash Changes command
-- Ref filtering from the sidebar: untick branches, remotes or tags to keep them out of the walk
+- Two sidebar filters: untick branches, remotes or tags to keep them out of the walk, and tick
+  authors to show only theirs. Both narrow what `git log` walks rather than hiding rows
+- A text filter for the branch list itself, for repositories with more refs than fit on screen
 - Draggable split between the graph and the details pane, and a tree/flat toggle for the
   changed-file list - both remembered across panel reloads
 

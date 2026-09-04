@@ -54,6 +54,18 @@
         "title": "Stash Changes",
         "category": "Braid",
         "icon": "$(archive)"
+      },
+      {
+        "command": "braid.filterRefs",
+        "title": "Filter Branches & Tags…",
+        "category": "Braid",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "braid.showAllAuthors",
+        "title": "Show All Authors",
+        "category": "Braid",
+        "icon": "$(clear-all)"
       }
     ],
     "menus": {
@@ -76,14 +88,24 @@
       ],
       "view/title": [
         {
+          "command": "braid.filterRefs",
+          "when": "view == braid.refs",
+          "group": "navigation@1"
+        },
+        {
           "command": "braid.showAllRefs",
           "when": "view == braid.refs",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "braid.openGraph",
           "when": "view == braid.refs",
-          "group": "navigation"
+          "group": "navigation@3"
+        },
+        {
+          "command": "braid.showAllAuthors",
+          "when": "view == braid.authors",
+          "group": "navigation@1"
         }
       ]
     },
@@ -139,6 +161,11 @@
         {
           "id": "braid.refs",
           "name": "Branches & Tags",
+          "icon": "media/braid.svg"
+        },
+        {
+          "id": "braid.authors",
+          "name": "Authors",
           "icon": "media/braid.svg"
         }
       ]

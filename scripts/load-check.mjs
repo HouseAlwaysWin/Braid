@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import Module from 'node:module';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,6 +31,13 @@ function makeTempRepo() {
   for (const n of [1, 2, 3]) {
     commitInto(dir, n);
   }
+
+  // A second author, so filtering by one of them has something to remove.
+  runGit(dir, 'config', 'user.name', 'Someone Else');
+  runGit(dir, 'config', 'user.email', 'else@example.invalid');
+  commitInto(dir, 4);
+  runGit(dir, 'config', 'user.name', 'Braid Test');
+  runGit(dir, 'config', 'user.email', 'test@example.invalid');
 
   // A side branch with a commit of its own, so the ref filter has something to remove.
   runGit(dir, 'checkout', '-q', '-b', 'side');
@@ -61,9 +68,10 @@ const problems = [];
 const contentProviders = new Map();
 const diffsOpened = [];
 let statusBarItem = null;
-let treeProvider = null;
-let checkboxHandler = null;
-let treeView = null;
+let refFilterAnswer = 'side';
+const treeProviders = new Map();
+const checkboxHandlers = new Map();
+const treeViews = new Map();
 
 class StubEmitter {
   constructor() { this.listeners = []; }
@@ -114,14 +122,16 @@ const vscodeStub = {
     showInformationMessage: (m) => problems.push(`unexpected info message: ${m}`),
     showWarningMessage: (m) => problems.push(`unexpected warning: ${m}`),
     setStatusBarMessage: () => ({ dispose() {} }),
+    showInputBox: async () => refFilterAnswer,
     createTreeView: (id, options) => {
-      treeProvider = options.treeDataProvider;
-      treeView = {
+      treeProviders.set(id, options.treeDataProvider);
+      const view = {
         message: undefined,
-        onDidChangeCheckboxState: (fn) => { checkboxHandler = fn; return { dispose() {} }; },
+        onDidChangeCheckboxState: (fn) => { checkboxHandlers.set(id, fn); return { dispose() {} }; },
         dispose() {},
       };
-      return treeView;
+      treeViews.set(id, view);
+      return view;
     },
     createStatusBarItem: (id, alignment, priority) => {
       statusBarItem = { id, alignment, priority, visible: false };
@@ -195,6 +205,30 @@ Module._load = function patched(request, parent, isMain) {
 
   return originalLoad.call(this, request, parent, isMain);
 };
+
+/*
+ * This runs the built bundle, not the sources, so a stale dist/ silently checks the wrong code -
+ * which has already cost one round of "but I fixed that". `npm test` builds first; a direct run
+ * might not have.
+ */
+{
+  const bundle = statSync(resolve('dist/extension.js'), { throwIfNoEntry: false });
+
+  if (bundle === undefined) {
+    console.error('dist/extension.js is missing - run `npm run build` first.');
+    process.exit(1);
+  }
+
+  const newest = readdirSync(resolve('src'), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => statSync(join(entry.parentPath, entry.name)).mtimeMs)
+    .reduce((a, b) => Math.max(a, b), 0);
+
+  if (newest > bundle.mtimeMs) {
+    console.error('dist/extension.js is older than src/ - run `npm run build` first.');
+    process.exit(1);
+  }
+}
 
 const require_ = createRequire(import.meta.url);
 const extension = require_(resolve('dist/extension.js'));
@@ -423,7 +457,11 @@ if (done === undefined) {
  * Ref filtering has to be a real filter, not a display trick: unticking refs must narrow what
  * `git log` walks, so the commit count actually drops.
  */
-if (treeProvider !== null && checkboxHandler !== null) {
+const treeProvider = treeProviders.get('braid.refs');
+const checkboxHandler = checkboxHandlers.get('braid.refs');
+const treeView = treeViews.get('braid.refs');
+
+if (treeProvider !== undefined && checkboxHandler !== undefined) {
   const groups = treeProvider.getChildren();
   const allRefs = groups.flatMap((g) => treeProvider.getChildren(g));
 
@@ -509,6 +547,91 @@ if (treeProvider !== null && checkboxHandler !== null) {
   }
 } else {
   problems.push('no refs tree view was registered');
+}
+
+/*
+ * The two sidebar filters. They do different jobs and both are worth proving: the ref filter
+ * narrows the *listing*, the author filter narrows what git *walks*.
+ */
+{
+  const before = treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length;
+
+  await commands.get('braid.filterRefs')();
+  const filtered = treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g));
+
+  console.log(`\nref filter     : ${before} refs -> ${filtered.length} matching "side"`);
+  console.log('  message      :', JSON.stringify(treeView?.message));
+
+  if (filtered.length >= before || filtered.length === 0) {
+    problems.push(`the ref filter did not narrow the listing (${before} -> ${filtered.length})`);
+  }
+
+  if (treeView?.message?.includes('side') !== true) {
+    problems.push('the refs view does not say a filter is applied');
+  }
+
+  // A group with a match opens itself; matches behind a closed chevron help nobody.
+  const groups = treeProvider.getChildren();
+  if (!groups.every((g) => treeProvider.getTreeItem(g).collapsibleState === 2)) {
+    problems.push('a filtered group did not expand to show its matches');
+  }
+
+  refFilterAnswer = '';
+  await commands.get('braid.filterRefs')();
+
+  if (treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length !== before) {
+    problems.push('clearing the ref filter did not restore the listing');
+  }
+}
+
+{
+  const authorsProvider = treeProviders.get('braid.authors');
+  const authorsHandler = checkboxHandlers.get('braid.authors');
+
+  if (authorsProvider === undefined || authorsHandler === undefined) {
+    problems.push('no authors view was registered');
+  } else {
+    const authors = await authorsProvider.getChildren();
+    console.log(
+      '\nauthors        :',
+      authors.map((a) => `${a.name} (${a.commits})`).join(', ') || '(none)',
+    );
+
+    if (authors.length === 0) {
+      problems.push('the authors view listed nobody');
+    } else {
+      const baseline = posted.filter((m) => m.type === 'done').pop()?.total ?? 0;
+      const from = posted.filter((m) => m.type === 'done').length;
+
+      authorsHandler({ items: [[authors[0], 1]] });
+
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline && posted.filter((m) => m.type === 'done').length === from) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+
+      const after = posted.filter((m) => m.type === 'done').pop()?.total ?? -1;
+      console.log(`  filtered to  : ${authors[0].name} -> ${after} of ${baseline} commits`);
+
+      if (after >= baseline || after !== authors[0].commits) {
+        problems.push(
+          `filtering to ${authors[0].name} gave ${after} commits, expected their ${authors[0].commits} of ${baseline}`,
+        );
+      }
+
+      // Put it back. Leaving a filter on would silently change what every later section is
+      // measuring - which is exactly what it did the first time this ran.
+      await commands.get('braid.showAllAuthors')();
+
+      const restoreDeadline = Date.now() + 20_000;
+      while (
+        Date.now() < restoreDeadline &&
+        (posted.filter((m) => m.type === 'done').pop()?.total ?? 0) !== baseline
+      ) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    }
+  }
 }
 
 /*

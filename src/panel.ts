@@ -18,6 +18,15 @@ import type { Search } from './git/search.ts';
 import { searchArgs } from './git/search.ts';
 import type { HostMessage, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
+
+/**
+ * Everything outside the panel that narrows what the graph walks. One object rather than a growing
+ * list of callbacks, and read fresh on every reload so the panel never holds a stale copy.
+ */
+export interface FilterSource {
+  refs(): string[] | null;
+  authorArgs(): string[];
+}
 import { RepoLock } from './git/lock.ts';
 import { describeOperation, readRepoState } from './git/repoState.ts';
 import { listStashes } from './git/stash.ts';
@@ -85,7 +94,7 @@ export class BraidPanel {
   private signature: string | null = null;
   private signaturePromise: Promise<string | null> | null = null;
   private search: Search | null = null;
-  private readonly refFilter: () => string[] | null;
+  private readonly filters: FilterSource;
 
   private readonly ui: ActionUi = {
     confirm: async (request) => {
@@ -125,7 +134,7 @@ export class BraidPanel {
     git: Git,
     repo: RepoInfo,
     column: vscode.ViewColumn,
-    refFilter: () => string[] | null,
+    filters: FilterSource,
   ): BraidPanel {
     const existing = BraidPanel.open.get(repo.root);
     if (existing !== undefined) {
@@ -146,7 +155,7 @@ export class BraidPanel {
       },
     );
 
-    const braid = new BraidPanel(panel, extensionUri, git, repo, refFilter);
+    const braid = new BraidPanel(panel, extensionUri, git, repo, filters);
     BraidPanel.open.set(repo.root, braid);
     return braid;
   }
@@ -156,13 +165,13 @@ export class BraidPanel {
     extensionUri: vscode.Uri,
     git: Git,
     repo: RepoInfo,
-    refFilter: () => string[] | null,
+    filters: FilterSource,
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.git = git;
     this.repo = repo;
-    this.refFilter = refFilter;
+    this.filters = filters;
 
     panel.webview.html = this.html(panel.webview);
 
@@ -511,8 +520,8 @@ export class BraidPanel {
         {
           batchSize: 500,
           maxCommits: config.get<number>('maxCommits', 250_000),
-          filters: searchArgs(this.search),
-          refs: this.refFilter(),
+          filters: [...searchArgs(this.search), ...this.filters.authorArgs()],
+          refs: this.filters.refs(),
           stashes,
         },
         controller.signal,

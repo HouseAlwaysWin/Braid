@@ -40,8 +40,19 @@ export const ACTIONS: readonly Action[] = [
   ...STASH_ACTIONS,
 ];
 
+/** Menu sections, top to bottom. Anything unlisted sorts to the end, before danger. */
+const GROUP_ORDER = ['branch', 'create', 'commit', 'stash', 'operation', 'danger'];
+
 export function buildMenu(target: Target, state: RepoState): MenuItem[] {
-  return ACTIONS.filter((action) => action.appliesTo(target)).map((action) => ({
+  const rank = (group: string): number => {
+    const index = GROUP_ORDER.indexOf(group);
+    return index < 0 ? GROUP_ORDER.length - 1 : index;
+  };
+
+  return ACTIONS.filter((action) => action.appliesTo(target))
+    .slice()
+    .sort((a, b) => rank(a.group) - rank(b.group))
+    .map((action) => ({
     id: action.id,
     label: action.label(target),
     group: action.group,

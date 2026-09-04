@@ -6,6 +6,7 @@ import { discover } from './git/discovery.ts';
 import { BraidPanel, setPanelLogger } from './panel.ts';
 import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
 import { RefsProvider } from './refsView.ts';
+import { AuthorsProvider } from './authorsView.ts';
 
 let output: vscode.LogOutputChannel | undefined;
 
@@ -85,12 +86,24 @@ export function activate(context: vscode.ExtensionContext): void {
     showCollapseAll: true,
   });
 
+  const authors = new AuthorsProvider(git);
+  const authorsView = vscode.window.createTreeView('braid.authors', { treeDataProvider: authors });
+
+  // Read fresh on every reload, so neither view has to push anything at the panel.
+  const filters = {
+    refs: () => refs.visibleRefs(),
+    authorArgs: () => authors.filterArgs(),
+  };
+
   context.subscriptions.push(
     refsView,
+    authorsView,
     refs.attach(refsView),
+    authors.attach(authorsView),
 
-    // Unticking a ref narrows the walk, so the graph has to be rebuilt rather than merely repainted.
+    // Either filter narrows the walk, so the graph is rebuilt rather than merely repainted.
     refs.onDidChangeFilter(() => BraidPanel.active()?.refresh()),
+    authors.onDidChangeFilter(() => BraidPanel.active()?.refresh()),
 
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, new RevisionContentProvider(git)),
 
@@ -108,17 +121,34 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       await refs.setRepository(repo);
+      authors.setRepository(repo);
 
       BraidPanel.show(
         context.extensionUri,
         git,
         repo,
         vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
-        () => refs.visibleRefs(),
+        filters,
       );
     }),
 
     vscode.commands.registerCommand('braid.showAllRefs', () => refs.showAll()),
+
+    vscode.commands.registerCommand('braid.showAllAuthors', () => authors.showAll()),
+
+    // A tree view cannot host a text field, so the query is typed into VS Code's own input and the
+    // list narrows behind it.
+    vscode.commands.registerCommand('braid.filterRefs', async () => {
+      const query = await vscode.window.showInputBox({
+        title: 'Filter branches and tags',
+        prompt: 'Substring to match; leave empty to show all',
+        value: refs.filterText,
+      });
+
+      if (query !== undefined) {
+        refs.setQuery(query);
+      }
+    }),
 
     vscode.commands.registerCommand('braid.stash', () => {
       const panel = BraidPanel.active();
@@ -191,7 +221,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Populate the sidebar before the graph is ever opened, so clicking the Activity Bar icon does
   // not land on an empty room.
-  void findRepository(git).then((repo) => refs.setRepository(repo));
+  void findRepository(git).then((repo) => {
+    authors.setRepository(repo);
+    return refs.setRepository(repo);
+  });
 
   output.info('Braid activated');
 }

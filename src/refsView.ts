@@ -48,6 +48,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
   private repo: RepoInfo | null = null;
   private refs: Ref[] = [];
   private view: vscode.TreeView<Node> | null = null;
+  private query = '';
 
   /**
    * Refs the user has switched off. Storing the *hidden* set rather than the visible one means a
@@ -135,13 +136,42 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     this.updateMessage();
   }
 
+  /**
+   * Refs left after the text filter.
+   *
+   * This is a different job from the checkboxes and worth not confusing: the filter decides what is
+   * *listed here*, the checkboxes decide what is *drawn in the graph*. Narrowing the list does not
+   * hide anyone's commits.
+   */
+  private visible(): Ref[] {
+    if (this.query.length === 0) {
+      return this.refs;
+    }
+
+    const needle = this.query.toLowerCase();
+    return this.refs.filter((ref) => ref.label.toLowerCase().includes(needle));
+  }
+
+  /** Narrow the listing. An empty string clears it. */
+  setQuery(query: string): void {
+    this.query = query.trim();
+    this.changed.fire(undefined);
+    this.updateMessage();
+  }
+
+  get filterText(): string {
+    return this.query;
+  }
+
   getChildren(node?: Node): Node[] {
+    const refs = this.visible();
+
     if (node === undefined) {
-      return GROUPS.filter((group) => this.refs.some((ref) => ref.group.id === group.id));
+      return GROUPS.filter((group) => refs.some((ref) => ref.group.id === group.id));
     }
 
     if (node.kind === 'group') {
-      return this.refs.filter((ref) => ref.group.id === node.id);
+      return refs.filter((ref) => ref.group.id === node.id);
     }
 
     return [];
@@ -149,10 +179,15 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
 
   getTreeItem(node: Node): vscode.TreeItem {
     if (node.kind === 'group') {
-      const children = this.refs.filter((ref) => ref.group.id === node.id);
+      const children = this.visible().filter((ref) => ref.group.id === node.id);
       const shown = children.filter((ref) => !this.hidden.has(ref.refName)).length;
 
-      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
+      const item = new vscode.TreeItem(
+        node.label,
+        this.query.length > 0
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed,
+      );
       item.id = `group:${node.id}`;
       item.description = shown === children.length ? `${children.length}` : `${shown}/${children.length}`;
       item.checkboxState = shown > 0 ? Checked : Unchecked;
@@ -229,10 +264,15 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
       return;
     }
 
+    // Two independent things, said in order: what is listed here, then what reaches the graph.
+    const listing =
+      this.query.length === 0 ? '' : `Listing refs matching “${this.query}”. `;
+
     this.view.message =
-      this.hidden.size === 0
+      listing +
+      (this.hidden.size === 0
         ? 'Untick a branch or tag to keep it out of the graph.'
-        : `${this.hidden.size} hidden — the graph shows the rest.`;
+        : `${this.hidden.size} hidden — the graph shows the rest.`);
   }
 
   /** Turn every ref back on. */
