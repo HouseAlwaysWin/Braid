@@ -20,14 +20,15 @@ Working:
 - Double-click a file to open it in VS Code's own diff editor, renames included
 - Search by message, author, diff content (`-G`) or path, pushed down into `git log`
 - Auto-refresh: commit from a terminal and the graph reloads itself
-- Right-click a branch to check it out - the first write action, on machinery built to carry the rest
+- Right-click to act: checkout (branch, remote branch, or a commit detached), create and rename
+  branches, create lightweight or annotated tags, delete branches and tags
 - Ref filtering from the sidebar: untick branches, remotes or tags to keep them out of the walk
 - Draggable split between the graph and the details pane, and a tree/flat toggle for the
   changed-file list - both remembered across panel reloads
 
 Write operations are arriving one tier at a time. Anything that could destroy uncommitted work
-names the files it would destroy before asking; nothing passes `--force` by default. Still to come:
-branches and tags, stash, cherry-pick/revert/reset, merge and rebase, then fetch/pull/push.
+names the files it would destroy before asking; nothing passes `--force` by default. Still to come: stash,
+cherry-pick/revert/reset, merge and rebase, then fetch/pull/push.
 
 ## Where to find it
 

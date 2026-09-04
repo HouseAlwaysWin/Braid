@@ -22,7 +22,7 @@ import type { RepoInfo } from '../src/git/discovery.ts';
 import { Operation, parseStatus, readOperation, readRepoState, workAtRisk } from '../src/git/repoState.ts';
 import { Remedy, mapGitError } from '../src/git/errors.ts';
 import type { ActionUi, Target } from '../src/actions/registry.ts';
-import { buildMenu, findAction } from '../src/actions/registry.ts';
+import { buildMenu, confirmIfNeeded, findAction } from '../src/actions/registry.ts';
 import { RepoLock } from '../src/git/lock.ts';
 
 const git = new Git({});
@@ -61,15 +61,37 @@ async function open(dir: string): Promise<RepoInfo> {
   return repo as RepoInfo;
 }
 
-/** Records what it was asked, and answers however the test says. */
-function fakeUi(answer = true): ActionUi & { confirmations: string[] } {
+/**
+ * Records what it was asked and answers however the test says.
+ *
+ * `inputs` are handed out in order, so a test can script a whole prompt sequence; running out
+ * answers null, which every action treats as a cancel.
+ */
+function fakeUi(
+  options: { confirm?: boolean; inputs?: string[] } = {},
+): ActionUi & { confirmations: string[]; prompts: string[] } {
   const confirmations: string[] = [];
+  const prompts: string[] = [];
+  const inputs = [...(options.inputs ?? [])];
 
   return {
     confirmations,
+    prompts,
     confirm: async (request) => {
       confirmations.push(request.detail);
-      return answer;
+      return options.confirm ?? true;
+    },
+    input: async (request) => {
+      prompts.push(request.title);
+      const next = inputs.shift();
+
+      if (next === undefined) {
+        return null;
+      }
+
+      const rejection = request.validate?.(next) ?? null;
+      assert.equal(rejection, null, `the test supplied a value the action rejects: ${rejection}`);
+      return next;
     },
     progress: async (_title, work) => work(),
     notify: () => undefined,
@@ -251,4 +273,141 @@ test('an unrecognised failure keeps git own words rather than inventing vaguer o
 
   assert.equal(mapped.message, 'something entirely new happened');
   assert.ok(mapped.remedies.includes(Remedy.ShowLog));
+});
+
+const commit = (sha: string): Target => ({ kind: 'commit', sha, subject: 'x' });
+
+async function run(dir: string, id: string, target: Target, ui = fakeUi()) {
+  const repo = await open(dir);
+  const state = await readRepoState(git, repo);
+  const action = findAction(id);
+
+  assert.notEqual(action, undefined, `no such action: ${id}`);
+
+  const context = { git, repo, state, target, ui };
+  const allowed = await confirmIfNeeded(action!, context);
+
+  return allowed ? action!.run(context) : { message: '', ran: false };
+}
+
+test('creating a branch makes it and checks it out', async () => {
+  const dir = makeRepo();
+  const head = sh(dir, 'rev-parse', 'HEAD').trim();
+
+  await run(dir, 'braid.createBranch', commit(head), fakeUi({ inputs: ['topic/new-thing'] }));
+
+  assert.equal(sh(dir, 'rev-parse', '--abbrev-ref', 'HEAD').trim(), 'topic/new-thing');
+  assert.equal(sh(dir, 'rev-parse', 'topic/new-thing').trim(), head);
+});
+
+test('a branch name git would reject never reaches git', async () => {
+  const dir = makeRepo();
+  const head = sh(dir, 'rev-parse', 'HEAD').trim();
+  const ui = fakeUi({ inputs: [] });
+  const repo = await open(dir);
+  const state = await readRepoState(git, repo);
+
+  // The action asks; the fake declines. Nothing should have been created either way.
+  await findAction('braid.createBranch')?.run({ git, repo, state, target: commit(head), ui });
+  assert.equal(sh(dir, 'branch', '--list', '--format=%(refname:short)').trim().split('\n').sort().join(','), 'feature,main');
+
+  // And the validator the action supplies rejects what git rejects.
+  const captured: Array<(v: string) => string | null> = [];
+  const capturingUi: ActionUi = {
+    ...fakeUi(),
+    input: async (request) => {
+      if (request.validate !== undefined) {
+        captured.push(request.validate);
+      }
+      return null;
+    },
+  };
+
+  await findAction('braid.createBranch')?.run({ git, repo, state, target: commit(head), ui: capturingUi });
+
+  const validate = captured[0];
+  assert.notEqual(validate, undefined);
+  assert.equal(validate?.('main'), 'main already exists');
+  assert.match(validate?.('has space') ?? '', /Not allowed/);
+  assert.match(validate?.('bad..name') ?? '', /Not allowed/);
+  assert.match(validate?.('ends.lock') ?? '', /end with .lock/);
+  assert.equal(validate?.('perfectly/fine'), null);
+  // 'feature' already exists, so it cannot also be a folder holding 'feature/x'.
+  assert.match(validate?.('feature/x') ?? '', /Conflicts with feature/);
+});
+
+test('renaming a branch moves the name and keeps the commit', async () => {
+  const dir = makeRepo();
+  const before = sh(dir, 'rev-parse', 'feature').trim();
+
+  await run(dir, 'braid.renameBranch', branch('feature'), fakeUi({ inputs: ['feature-renamed'] }));
+
+  assert.equal(sh(dir, 'rev-parse', 'feature-renamed').trim(), before);
+  assert.equal(sh(dir, 'branch', '--list', 'feature').trim(), '');
+});
+
+test('deleting a merged branch says nothing is lost, and deletes it', async () => {
+  const dir = makeRepo();
+  sh(dir, 'merge', '--no-edit', '-q', 'feature');
+
+  const ui = fakeUi();
+  const result = await run(dir, 'braid.deleteBranch', branch('feature'), ui);
+
+  assert.equal(result.ran, true);
+  assert.match(ui.confirmations[0] ?? '', /reachable from somewhere else/);
+  assert.equal(sh(dir, 'branch', '--list', 'feature').trim(), '');
+});
+
+test('deleting an unmerged branch counts the commits it would strand', async () => {
+  const dir = makeRepo();
+  const ui = fakeUi();
+
+  const result = await run(dir, 'braid.deleteBranch', branch('feature'), ui);
+
+  // `feature` is one commit ahead of main and nowhere else, so exactly one commit is at stake.
+  assert.match(ui.confirmations[0] ?? '', /^1 commit is on this branch and nowhere else/);
+  assert.match(ui.confirmations[0] ?? '', /reflog/);
+  assert.equal(result.ran, true);
+  assert.equal(sh(dir, 'branch', '--list', 'feature').trim(), '');
+});
+
+test('declining the confirmation leaves the branch alone', async () => {
+  const dir = makeRepo();
+
+  const result = await run(dir, 'braid.deleteBranch', branch('feature'), fakeUi({ confirm: false }));
+
+  assert.equal(result.ran, false);
+  assert.match(sh(dir, 'branch', '--list', 'feature'), /feature/);
+});
+
+test('the branch you are standing on is not offered for deletion', async () => {
+  const repo = await open(makeRepo());
+  const state = await readRepoState(git, repo);
+  const item = buildMenu(branch('main'), state).find((i) => i.id === 'braid.deleteBranch');
+
+  assert.equal(item?.disabledReason, 'Currently checked out');
+});
+
+test('an empty tag message makes a lightweight tag, a message makes an annotated one', async () => {
+  const dir = makeRepo();
+  const head = sh(dir, 'rev-parse', 'HEAD').trim();
+
+  await run(dir, 'braid.createTag', commit(head), fakeUi({ inputs: ['v1.0', ''] }));
+  await run(dir, 'braid.createTag', commit(head), fakeUi({ inputs: ['v2.0', 'the second one'] }));
+
+  assert.equal(sh(dir, 'cat-file', '-t', 'v1.0').trim(), 'commit', 'lightweight tags point straight at the commit');
+  assert.equal(sh(dir, 'cat-file', '-t', 'v2.0').trim(), 'tag', 'annotated tags are their own object');
+  assert.match(sh(dir, 'tag', '-n', '--list', 'v2.0'), /the second one/);
+});
+
+test('checking out a commit detaches HEAD and says how to get back', async () => {
+  const dir = makeRepo();
+  const first = sh(dir, 'rev-list', '--max-parents=0', 'HEAD').trim();
+
+  const result = await run(dir, 'braid.checkoutCommit', commit(first));
+
+  assert.equal(sh(dir, 'rev-parse', '--abbrev-ref', 'HEAD').trim(), 'HEAD', 'detached HEAD has no branch name');
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), first);
+  assert.match(result.message, /detached/);
+  assert.match(result.message, /git checkout main/);
 });

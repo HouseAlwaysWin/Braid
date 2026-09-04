@@ -46,6 +46,9 @@ export interface RepoState {
   readonly branch: string | null;
   readonly detached: boolean;
   readonly files: FileStatus[];
+  /** Existing local branch names - actions that create or rename need to know what is taken. */
+  readonly branches: string[];
+  readonly tags: string[];
 }
 
 /**
@@ -151,14 +154,20 @@ export function parseStatus(output: string): FileStatus[] {
 }
 
 export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState> {
-  const [operation, status, head, branch] = await Promise.all([
+  const [operation, status, head, branch, refs] = await Promise.all([
     readOperation(repo.gitDir),
     // A bare repository has no working tree, so there is nothing to be dirty.
     repo.isBare ? Promise.resolve('') : git.runRead(repo.root, ['status', '--porcelain', '-z']),
     git.runRead(repo.root, ['rev-parse', 'HEAD']).catch(() => ''),
     // Empty output and a non-zero exit both mean "not on a branch"; -q keeps the noise down.
     git.runRead(repo.root, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => ''),
+    git.runRead(repo.root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/tags']),
   ]);
+
+  const names = refs
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
   const branchName = branch.trim();
   const headSha = head.trim();
@@ -169,6 +178,8 @@ export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState
     branch: branchName.length > 0 ? branchName : null,
     detached: headSha.length > 0 && branchName.length === 0,
     files: parseStatus(status),
+    branches: names.filter((r) => r.startsWith('refs/heads/')).map((r) => r.slice('refs/heads/'.length)),
+    tags: names.filter((r) => r.startsWith('refs/tags/')).map((r) => r.slice('refs/tags/'.length)),
   };
 }
 

@@ -96,6 +96,19 @@ export class BraidPanel {
 
       return choice === request.confirmLabel;
     },
+
+    input: async (request) => {
+      const value = await vscode.window.showInputBox({
+        title: request.title,
+        prompt: request.placeholder,
+        ...(request.value === undefined ? {} : { value: request.value }),
+        validateInput: (entered) => request.validate?.(entered) ?? null,
+      });
+
+      // Dismissing the box is a cancel; an empty string is a deliberate empty answer, which some
+      // actions treat as meaningful (a tag with no message is a lightweight tag).
+      return value ?? null;
+    },
     // withProgress hands back a Thenable; the registry deals in Promises so it can stay free of
     // any vscode types and remain runnable from a test.
     progress: async (title, work) =>

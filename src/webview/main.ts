@@ -263,7 +263,19 @@ function renderMenu(target: Target, items: readonly MenuItem[], x: number, y: nu
   menu.className = 'menu';
   menu.setAttribute('role', 'menu');
 
+  let previousGroup: string | null = null;
+
   for (const item of items) {
+    // A rule between groups, so "Delete" never sits flush against "Checkout" and gets hit by
+    // someone aiming one row higher.
+    if (previousGroup !== null && item.group !== previousGroup) {
+      const rule = document.createElement('div');
+      rule.className = 'menu-separator';
+      menu.append(rule);
+    }
+
+    previousGroup = item.group;
+
     const el = document.createElement('div');
     el.className = item.destructive ? 'menu-item destructive' : 'menu-item';
     el.setAttribute('role', 'menuitem');

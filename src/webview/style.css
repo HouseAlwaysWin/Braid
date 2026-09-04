@@ -511,3 +511,9 @@ body {
   font-size: 0.85em;
   color: var(--vscode-descriptionForeground);
 }
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border, #454545));
+}

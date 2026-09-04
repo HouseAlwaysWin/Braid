@@ -162,11 +162,18 @@ ${BODY_MARKUP}
           x: m.x,
           y: m.y,
           items: m.target.kind === 'ref'
-            ? [{ id: 'braid.checkoutBranch', label: 'Checkout ' + m.target.label, group: 'branch', destructive: false, disabledReason: null }]
+            ? [
+                { id: 'braid.checkoutBranch', label: 'Checkout ' + m.target.label, group: 'branch', destructive: false, disabledReason: null },
+                { id: 'braid.renameBranch', label: 'Rename ' + m.target.label + '…', group: 'branch', destructive: false, disabledReason: null },
+                { id: 'braid.createBranch', label: 'Create branch from ' + m.target.label + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'braid.createTag', label: 'Create tag at ' + m.target.label + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'braid.deleteBranch', label: 'Delete ' + m.target.label, group: 'danger', destructive: false, disabledReason: null },
+              ]
             : [
-                { id: 'demo.cherryPick', label: 'Cherry-pick onto main', group: 'commit', destructive: false, disabledReason: null },
-                { id: 'demo.reset', label: 'Reset main to here (hard)', group: 'commit', destructive: true, disabledReason: null },
-                { id: 'demo.revert', label: 'Revert this commit', group: 'commit', destructive: false, disabledReason: 'Finish a merge first' },
+                { id: 'braid.checkoutCommit', label: 'Checkout ' + m.target.sha.slice(0,8) + ' (detached)', group: 'branch', destructive: false, disabledReason: null },
+                { id: 'braid.createBranch', label: 'Create branch from ' + m.target.sha.slice(0,8) + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'braid.createTag', label: 'Create tag at ' + m.target.sha.slice(0,8) + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'demo.reset', label: 'Reset main to here (hard)', group: 'danger', destructive: true, disabledReason: 'Not built yet' },
               ],
         }, '*');
       }
