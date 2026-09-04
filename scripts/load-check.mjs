@@ -632,7 +632,29 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
     problems.push(`escaping the picker left the filter changed (${afterEscape} refs listed)`);
   }
 
-  await typeIntoRefFilter('');
+  /*
+   * "Show all" has to clear the text filter too. It used to clear only the unticked refs, and to
+   * return early when nothing was unticked - so with a text filter applied and nothing unticked,
+   * which is the ordinary case, the button did nothing at all.
+   */
+  await typeIntoRefFilter('side');
+
+  const reloadsBefore = posted.filter((m) => m.type === 'done').length;
+  await commands.get('braid.showAllRefs')();
+
+  const restored = treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length;
+  console.log(`  show all     : back to ${restored} refs`);
+
+  if (restored !== before) {
+    problems.push(`Show All left the text filter applied (${restored} of ${before} refs listed)`);
+  }
+
+  // And it should not have re-walked the history: no tick changed, so the graph is unaffected.
+  await new Promise((r) => setTimeout(r, 400));
+
+  if (posted.filter((m) => m.type === 'done').length !== reloadsBefore) {
+    problems.push('clearing a text-only filter reloaded the graph for nothing');
+  }
 }
 
 {

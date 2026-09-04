@@ -285,15 +285,29 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
   }
 
   /** Turn every ref back on. */
+  /**
+   * Put everything back: both the text filter and the unticked refs.
+   *
+   * Both, because the button says "show all" and there is no reading of that which leaves half the
+   * list hidden. They are still separate underneath - only the ticks change what the graph walks -
+   * so the reload is fired only when a tick actually changed. Clearing a list filter should not
+   * cost a re-walk of the history.
+   */
   showAll(): void {
-    if (this.hidden.size === 0) {
+    const hadHidden = this.hidden.size > 0;
+
+    if (!hadHidden && this.query.length === 0) {
       return;
     }
 
     this.hidden.clear();
+    this.query = '';
     this.changed.fire(undefined);
     this.updateMessage();
-    this.filterChanged.fire();
+
+    if (hadHidden) {
+      this.filterChanged.fire();
+    }
   }
 }
 
