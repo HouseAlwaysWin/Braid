@@ -142,7 +142,8 @@
     "vscode:prepublish": "node esbuild.mjs --production",
     "smoke": "node scripts/smoke.mjs",
     "load-check": "node scripts/load-check.mjs",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "icon-check": "node scripts/icon-check.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

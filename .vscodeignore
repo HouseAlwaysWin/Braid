@@ -5,10 +5,13 @@ src/**
 test/**
 scripts/**
 node_modules/**
-dist/**/*.map
-dist/preview.html
 tsconfig.json
 esbuild.mjs
 .gitattributes
 .gitignore
 *.vsix
+dist/**
+!dist/extension.js
+!dist/main.js
+!dist/style.css
+!dist/package.json
