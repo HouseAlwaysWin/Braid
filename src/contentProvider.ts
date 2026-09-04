@@ -68,7 +68,7 @@ export class RevisionContentProvider implements vscode.TextDocumentContentProvid
     }
 
     try {
-      const raw = await this.git.run(revision.repo, ['cat-file', 'blob', revision.blob]);
+      const raw = await this.git.runRead(revision.repo, ['cat-file', 'blob', revision.blob]);
 
       // A text document cannot hold binary content: it would be mangled on the way through and the
       // diff would be nonsense. Say so instead of pretending.

@@ -67,17 +67,42 @@ const FORCED_CONFIG = [
   'log.showSignature=false',
 ];
 
+/** Reads observe the repository; writes change it. They do not want the same environment. */
+export type GitMode = 'read' | 'write';
+
 /**
- * Environment every git call runs under. Prompts would hang the extension host forever, optional
- * locks make read commands write to .git (which our own watcher would then see as a change), and
- * LC_ALL pins git's own messages to English so error matching is not locale-dependent.
+ * Environment a git call runs under.
+ *
+ * Shared by both modes: `GIT_TERMINAL_PROMPT=0`, because a prompt in the extension host is a hang
+ * with no way out; and `LC_ALL=C`, which pins git's own messages to English so error matching is
+ * not locale-dependent - the thing that makes `errors.ts` possible at all.
+ *
+ * Only reads get `GIT_OPTIONAL_LOCKS=0`. It stops a read command from writing to .git, which our
+ * own watcher would otherwise see as a change; for a write, suppressing locks is meaningless at
+ * best.
+ *
+ * Only writes get the editor overrides, and they are not optional. `git revert`, `git cherry-pick`
+ * and a non-fast-forward `git merge` all open an editor for the message by default. In a terminal
+ * that is a prompt; in an extension host it is a child process waiting forever on an editor that
+ * will never launch, holding the repository lock while it waits. `true` is a program that exits 0
+ * immediately, which is exactly the "editor" these commands need.
  */
-function gitEnv(): NodeJS.ProcessEnv {
-  return {
+function gitEnv(mode: GitMode): NodeJS.ProcessEnv {
+  const base: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_TERMINAL_PROMPT: '0',
-    GIT_OPTIONAL_LOCKS: '0',
     LC_ALL: 'C',
+  };
+
+  if (mode === 'read') {
+    return { ...base, GIT_OPTIONAL_LOCKS: '0' };
+  }
+
+  return {
+    ...base,
+    GIT_EDITOR: 'true',
+    GIT_SEQUENCE_EDITOR: 'true',
+    GIT_MERGE_AUTOEDIT: 'no',
   };
 }
 
@@ -101,10 +126,38 @@ export class Git {
     this.onCommand = options.onCommand;
   }
 
-  /** Run git and throw if it fails. */
-  async run(cwd: string, args: readonly string[], options: GitRunOptions = {}): Promise<string> {
-    const result = await this.tryRun(cwd, args, options);
+  /** Run a command that only observes the repository, and throw if it fails. */
+  async runRead(cwd: string, args: readonly string[], options: GitRunOptions = {}): Promise<string> {
+    return this.throwOnFailure(await this.tryRead(cwd, args, options), args);
+  }
 
+  /**
+   * Run a command that changes the repository.
+   *
+   * Separate from `runRead` so the two can never share an environment by accident - see `gitEnv`
+   * for why that matters. Callers are expected to hold the repository lock; this deliberately does
+   * not take it itself, because a write is usually one step of a sequence (check state, act,
+   * re-read) that has to be atomic as a whole.
+   */
+  async runWrite(
+    cwd: string,
+    args: readonly string[],
+    options: GitRunOptions = {},
+  ): Promise<string> {
+    const result = await this.execute(cwd, args, options, 'write');
+    return this.throwOnFailure(result, args);
+  }
+
+  /** Run git and hand back the exit code instead of throwing - for the probes that expect failure. */
+  async tryRead(
+    cwd: string,
+    args: readonly string[],
+    options: GitRunOptions = {},
+  ): Promise<GitResult> {
+    return this.execute(cwd, args, options, 'read');
+  }
+
+  private throwOnFailure(result: GitResult, args: readonly string[]): string {
     if (result.exitCode !== 0) {
       throw new GitError(args, result.exitCode, result.stderr);
     }
@@ -112,17 +165,17 @@ export class Git {
     return result.stdout;
   }
 
-  /** Run git and hand back the exit code instead of throwing - for the probes that expect failure. */
-  async tryRun(
+  private async execute(
     cwd: string,
     args: readonly string[],
-    options: GitRunOptions = {},
+    options: GitRunOptions,
+    mode: GitMode,
   ): Promise<GitResult> {
     await this.acquire();
     const started = Date.now();
 
     try {
-      const result = await this.spawn(cwd, args, options);
+      const result = await this.spawn(cwd, args, options, mode);
 
       this.onCommand?.({
         args,
@@ -193,7 +246,8 @@ export class Git {
         cwd,
         shell: false,
         windowsHide: true,
-        env: gitEnv(),
+        // Streaming is only ever used to walk history, so it is a read by construction.
+        env: gitEnv('read'),
       });
 
       const decoder = new StringDecoder('utf8');
@@ -245,6 +299,7 @@ export class Git {
     cwd: string,
     args: readonly string[],
     options: GitRunOptions,
+    mode: GitMode,
   ): Promise<GitResult> {
     return new Promise<GitResult>((resolve, reject) => {
       if (options.signal?.aborted === true) {
@@ -257,7 +312,7 @@ export class Git {
         // No shell: arguments reach git exactly as written, whatever they contain.
         shell: false,
         windowsHide: true,
-        env: gitEnv(),
+        env: gitEnv(mode),
       });
 
       const stdout: Buffer[] = [];

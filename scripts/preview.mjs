@@ -151,7 +151,26 @@ ${BODY_MARKUP}
 <script>
   const sent = window.__sent = [];
   window.acquireVsCodeApi = () => ({
-    postMessage: (m) => { sent.push(m); if (m.type === 'ready') replay(); },
+    postMessage: (m) => {
+      sent.push(m);
+      if (m.type === 'ready') replay();
+      // Stand in for the host so the menu can be looked at: a real one, plus a disabled one.
+      if (m.type === 'requestMenu') {
+        window.postMessage({
+          type: 'menu',
+          target: m.target,
+          x: m.x,
+          y: m.y,
+          items: m.target.kind === 'ref'
+            ? [{ id: 'braid.checkoutBranch', label: 'Checkout ' + m.target.label, group: 'branch', destructive: false, disabledReason: null }]
+            : [
+                { id: 'demo.cherryPick', label: 'Cherry-pick onto main', group: 'commit', destructive: false, disabledReason: null },
+                { id: 'demo.reset', label: 'Reset main to here (hard)', group: 'commit', destructive: true, disabledReason: null },
+                { id: 'demo.revert', label: 'Revert this commit', group: 'commit', destructive: false, disabledReason: 'Finish a merge first' },
+              ],
+        }, '*');
+      }
+    },
     getState: () => undefined,
     setState: () => {},
   });

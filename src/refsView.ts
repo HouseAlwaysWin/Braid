@@ -98,7 +98,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     }
 
     try {
-      const out = await this.git.run(repo.root, [
+      const out = await this.git.runRead(repo.root, [
         'for-each-ref',
         '--format=%(refname)%00%(HEAD)',
         'refs/heads',

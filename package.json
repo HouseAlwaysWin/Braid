@@ -138,12 +138,13 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/**/*.test.ts",
+    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/load-check.mjs --watch",
     "vscode:prepublish": "node esbuild.mjs --production",
     "smoke": "node scripts/smoke.mjs",
     "load-check": "node scripts/load-check.mjs",
     "package": "vsce package --no-dependencies",
-    "icon-check": "node scripts/icon-check.mjs"
+    "icon-check": "node scripts/icon-check.mjs",
+    "test:unit": "node --test \"test/**/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

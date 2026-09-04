@@ -18,6 +18,7 @@ import type { GraphDot, Point } from '../graph/model.ts';
 import { DotKind } from '../graph/model.ts';
 import type { CommitDetails, FileChange } from '../git/details.ts';
 import type { SearchMode } from '../git/search.ts';
+import type { MenuItem, Target } from '../actions/registry.ts';
 import type { HostMessage, Row, WebviewMessage } from '../protocol.ts';
 
 interface VsCodeApi {
@@ -146,6 +147,16 @@ function renderRows(): void {
       const badge = document.createElement('span');
       badge.className = `ref ${ref.kind}`;
       badge.textContent = ref.name;
+      badge.addEventListener('contextmenu', (event) => {
+        event.stopPropagation();
+        openMenu(event, {
+          kind: 'ref',
+          refName: refFullName(ref.kind, ref.name),
+          label: ref.name,
+          refKind: ref.kind,
+        });
+      });
+
       el.append(badge);
     }
 
@@ -170,6 +181,10 @@ function renderRows(): void {
     el.append(sha);
 
     el.addEventListener('click', () => select(i));
+    el.addEventListener('contextmenu', (event) =>
+      openMenu(event, { kind: 'commit', sha: row.sha, subject: row.subject }),
+    );
+
     frag.append(el);
   }
 
@@ -199,6 +214,85 @@ function select(index: number): void {
   }
 
   schedule();
+}
+
+/**
+ * The full ref name git wants, rebuilt from the short label the row carries.
+ *
+ * The graph shows `origin/main`; git needs `refs/remotes/origin/main`. Passing the short form works
+ * right up until a branch and a tag share a name, at which point git picks one and the user gets a
+ * surprise - so the full name travels with every target.
+ */
+function refFullName(kind: string, name: string): string {
+  switch (kind) {
+    case 'remote':
+      return `refs/remotes/${name}`;
+    case 'tag':
+      return `refs/tags/${name}`;
+    default:
+      return `refs/heads/${name}`;
+  }
+}
+
+let menuEl: HTMLElement | null = null;
+
+function closeMenu(): void {
+  menuEl?.remove();
+  menuEl = null;
+}
+
+/**
+ * Right-click asks the host what is on the menu rather than deciding here: availability depends on
+ * repository state - mid-rebase, already checked out, a dirty tree - that the webview has no view
+ * of. One round trip per right-click is cheap; a menu that offers an action which then fails is not.
+ */
+function openMenu(event: MouseEvent, target: Target): void {
+  event.preventDefault();
+  closeMenu();
+  vscode.postMessage({ type: 'requestMenu', target, x: event.clientX, y: event.clientY });
+}
+
+function renderMenu(target: Target, items: readonly MenuItem[], x: number, y: number): void {
+  closeMenu();
+
+  if (items.length === 0) {
+    return;
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'menu';
+  menu.setAttribute('role', 'menu');
+
+  for (const item of items) {
+    const el = document.createElement('div');
+    el.className = item.destructive ? 'menu-item destructive' : 'menu-item';
+    el.setAttribute('role', 'menuitem');
+    el.textContent = item.label;
+
+    if (item.disabledReason === null) {
+      el.addEventListener('click', () => {
+        closeMenu();
+        vscode.postMessage({ type: 'runAction', id: item.id, target });
+      });
+    } else {
+      // Greyed out with the reason attached, rather than hidden: an action that vanishes leaves the
+      // user wondering whether they misremembered it.
+      el.classList.add('disabled');
+      el.append(span('menu-reason', item.disabledReason));
+    }
+
+    menu.append(el);
+  }
+
+  document.body.append(menu);
+  menuEl = menu;
+
+  // Place it at the pointer, then pull it back inside the window if it would hang off an edge.
+  const box = menu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - box.width - 4);
+  const top = Math.min(y, window.innerHeight - box.height - 4);
+  menu.style.left = `${Math.max(4, left)}px`;
+  menu.style.top = `${Math.max(4, top)}px`;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -720,6 +814,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       renderDetails(message.details);
       break;
 
+    case 'menu':
+      renderMenu(message.target, message.items, message.x, message.y);
+      break;
+
     case 'reloading':
       statusEl.textContent = `${message.reason} — reloading…`;
       break;
@@ -734,7 +832,17 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
   }
 });
 
-viewport.addEventListener('scroll', schedule, { passive: true });
+viewport.addEventListener('scroll', () => {
+  closeMenu();
+  schedule();
+}, { passive: true });
+
+window.addEventListener('blur', closeMenu);
+document.addEventListener('mousedown', (event) => {
+  if (menuEl !== null && !menuEl.contains(event.target as Node)) {
+    closeMenu();
+  }
+});
 window.addEventListener('resize', schedule);
 
 /*
@@ -789,6 +897,12 @@ document.addEventListener('keydown', (event) => {
 
   const page = Math.max(1, Math.floor(viewport.clientHeight / rowHeight) - 1);
   const from = selected < 0 ? -1 : selected;
+
+  if (event.key === 'Escape' && menuEl !== null) {
+    closeMenu();
+    event.preventDefault();
+    return;
+  }
 
   switch (event.key) {
     case 'ArrowDown':

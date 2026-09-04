@@ -118,8 +118,8 @@ export class RepoWatcher {
  */
 export async function refSignature(git: Git, repo: RepoInfo): Promise<string> {
   const [refs, head] = await Promise.all([
-    git.run(repo.root, ['for-each-ref', '--format=%(objectname)%(refname)']),
-    git.run(repo.root, ['rev-parse', 'HEAD']).catch(() => ''),
+    git.runRead(repo.root, ['for-each-ref', '--format=%(objectname)%(refname)']),
+    git.runRead(repo.root, ['rev-parse', 'HEAD']).catch(() => ''),
   ]);
 
   return `${head.trim()}\n${refs}`;

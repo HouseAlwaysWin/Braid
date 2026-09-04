@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const watchTest = process.argv.includes('--watch');
+const given = process.argv.slice(2).find((a) => !a.startsWith('--'));
 
 /** A throwaway repository, so the watcher test can commit into it without touching anything real. */
 function makeTempRepo() {
@@ -29,6 +30,11 @@ function makeTempRepo() {
   for (const n of [1, 2, 3]) {
     commitInto(dir, n);
   }
+
+  // A side branch with a commit of its own, so the ref filter has something to remove.
+  runGit(dir, 'checkout', '-q', '-b', 'side');
+  commitInto(dir, 9);
+  runGit(dir, 'checkout', '-q', 'main');
 
   return dir;
 }
@@ -43,9 +49,7 @@ function commitInto(dir, n) {
   runGit(dir, 'commit', '-q', '-m', 'commit ' + n);
 }
 
-const repoPath = watchTest
-  ? makeTempRepo()
-  : (process.argv.find((a) => !a.startsWith('--') && a !== process.argv[0] && a !== process.argv[1]) ?? 'D:/DotNetProjects/GitFlick');
+const repoPath = given ?? makeTempRepo();
 
 const commands = new Map();
 const posted = [];
@@ -372,6 +376,49 @@ if (done === undefined) {
 }
 
 /*
+ * Right-click. The menu is built by the host from repository state, so this exercises the round
+ * trip and the availability rules, not merely that something appears.
+ */
+{
+  const ask = async (label) => {
+    const before = posted.filter((m) => m.type === 'menu').length;
+
+    messageHandler({
+      type: 'requestMenu',
+      target: { kind: 'ref', refName: `refs/heads/${label}`, label, refKind: 'local' },
+      x: 10,
+      y: 10,
+    });
+
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && posted.filter((m) => m.type === 'menu').length === before) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const menus = posted.filter((m) => m.type === 'menu');
+    return menus[menus.length - 1];
+  };
+
+  const onSide = await ask('side');
+  const onCurrent = await ask('main');
+
+  console.log('\nmenu (side)    :', JSON.stringify(onSide?.items));
+  console.log('menu (current) :', JSON.stringify(onCurrent?.items?.map((i) => i.disabledReason)));
+
+  if (onSide?.items?.[0]?.id !== 'braid.checkoutBranch') {
+    problems.push('right-clicking a branch did not offer checkout');
+  }
+
+  if (onSide?.items?.[0]?.disabledReason !== null) {
+    problems.push(`checkout was unavailable on another branch: ${onSide?.items?.[0]?.disabledReason}`);
+  }
+
+  if (onCurrent?.items?.[0]?.disabledReason !== 'Already checked out') {
+    problems.push('checkout was offered for the branch that is already checked out');
+  }
+}
+
+/*
  * Ref filtering has to be a real filter, not a display trick: unticking refs must narrow what
  * `git log` walks, so the commit count actually drops.
  */
@@ -398,7 +445,7 @@ if (treeProvider !== null && checkboxHandler !== null) {
   }
 
   const baseline = done?.total ?? 0;
-  const keep = allRefs.find((r) => r.label === 'master') ?? allRefs[0];
+  const keep = allRefs.find((r) => r.label === 'main' || r.label === 'master') ?? allRefs[0];
 
   if (keep === undefined) {
     problems.push('the refs sidebar listed nothing');

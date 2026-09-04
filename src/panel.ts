@@ -18,6 +18,18 @@ import type { Search } from './git/search.ts';
 import { searchArgs } from './git/search.ts';
 import type { HostMessage, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
+import { RepoLock } from './git/lock.ts';
+import { readRepoState } from './git/repoState.ts';
+import { mapGitError } from './git/errors.ts';
+import type { ActionContext, ActionUi, Target } from './actions/registry.ts';
+import { buildMenu, confirmIfNeeded, findAction } from './actions/registry.ts';
+
+/** Set by the extension so panels can write to the same output channel. */
+let output: { warn(message: string): void } | undefined;
+
+export function setPanelLogger(logger: { warn(message: string): void }): void {
+  output = logger;
+}
 
 export const VIEW_TYPE = 'braid.graph';
 
@@ -50,6 +62,8 @@ function nonce(): string {
 export class BraidPanel {
   private static readonly open = new Map<string, BraidPanel>();
   private static current: BraidPanel | null = null;
+  /** Shared across panels: two graphs on the same repository must not write at once. */
+  private static readonly lock = new RepoLock();
 
   /** The graph the user is looking at, for commands that act on "this graph". */
   static active(): BraidPanel | null {
@@ -71,6 +85,26 @@ export class BraidPanel {
   private signaturePromise: Promise<string | null> | null = null;
   private search: Search | null = null;
   private readonly refFilter: () => string[] | null;
+
+  private readonly ui: ActionUi = {
+    confirm: async (request) => {
+      const choice = await vscode.window.showWarningMessage(
+        request.title,
+        { modal: true, detail: request.detail },
+        request.confirmLabel,
+      );
+
+      return choice === request.confirmLabel;
+    },
+    // withProgress hands back a Thenable; the registry deals in Promises so it can stay free of
+    // any vscode types and remain runnable from a test.
+    progress: async (title, work) =>
+      vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Braid: ${title}` },
+        work,
+      ),
+    notify: (message) => void vscode.window.setStatusBarMessage(`Braid: ${message}`, 4000),
+  };
 
   static show(
     extensionUri: vscode.Uri,
@@ -141,6 +175,12 @@ export class BraidPanel {
    * full re-walk of the history.
    */
   private async onRepositoryChanged(): Promise<void> {
+    // A write in flight touches refs constantly. Its own reload comes at the end; reacting here as
+    // well would reload the graph from the middle of a half-finished operation.
+    if (BraidPanel.lock.isBusy(this.repo.root)) {
+      return;
+    }
+
     // The baseline is captured alongside the walk rather than before it, so it may still be in
     // flight. Comparing against a half-set baseline would either miss a change or invent one.
     await this.signaturePromise;
@@ -211,9 +251,88 @@ export class BraidPanel {
       case 'openDiff':
         await this.openDiff(message.sha, message.index);
         break;
+      case 'requestMenu':
+        await this.showMenu(message.target, message.x, message.y);
+        break;
+      case 'runAction':
+        await this.runAction(message.id, message.target);
+        break;
       default:
         break;
     }
+  }
+
+  /**
+   * Whether an action is available depends on repository state - mid-rebase, already checked out,
+   * a dirty tree - which the webview does not have. So the menu is built here, on demand, and the
+   * click position rides along so it can open where the pointer is.
+   */
+  private async showMenu(target: Target, x: number, y: number): Promise<void> {
+    try {
+      const state = await readRepoState(this.git, this.repo);
+      this.post({ type: 'menu', target, items: buildMenu(target, state), x, y });
+    } catch (err) {
+      this.reportError(err);
+    }
+  }
+
+  /**
+   * Run one action, holding the repository lock across read-decide-act.
+   *
+   * The lock covers the whole sequence rather than just the git call: the state an action checked
+   * has to still be true when it acts, and the watcher must not reload the graph from underneath a
+   * half-finished operation.
+   */
+  private async runAction(id: string, target: Target): Promise<void> {
+    const action = findAction(id);
+
+    if (action === undefined) {
+      return;
+    }
+
+    try {
+      const result = await BraidPanel.lock.run(this.repo.root, async () => {
+        const state = await readRepoState(this.git, this.repo);
+        const unavailable = action.unavailable(target, state);
+
+        if (unavailable !== null) {
+          this.post({ type: 'error', message: `${action.label(target)}: ${unavailable.toLowerCase()}` });
+          return null;
+        }
+
+        const context: ActionContext = { git: this.git, repo: this.repo, state, target, ui: this.ui };
+
+        if (!(await confirmIfNeeded(action, context))) {
+          return null;
+        }
+
+        // Where we were, so the follow-up message can say how to get back. git keeps this in the
+        // reflog too, but only someone who already knows that would go looking.
+        const before = state.head;
+        const outcome = await action.run(context);
+        return { outcome, before };
+      });
+
+      if (result === null) {
+        return;
+      }
+
+      await this.reload();
+
+      const back = result.before === null ? '' : `  (was ${result.before.slice(0, 8)})`;
+      void vscode.window.setStatusBarMessage(`Braid: ${result.outcome.message}${back}`, 5000);
+    } catch (err) {
+      this.reportError(err);
+    }
+  }
+
+  private reportError(err: unknown): void {
+    const mapped = mapGitError(err);
+    const detail = mapped.paths.length === 0 ? '' : `\n\n${mapped.paths.map((p) => `  ${p}`).join('\n')}`;
+
+    output?.warn(`${mapped.message}\n${mapped.raw}`);
+    void vscode.window.showWarningMessage(mapped.message + detail, { modal: mapped.paths.length > 0 });
+    this.post({ type: 'error', message: mapped.message });
   }
 
   /**

@@ -66,7 +66,7 @@ function samePath(a: string, b: string): boolean {
  * with a bare `.git`, relative to a cwd the caller has to remember.
  */
 export async function discover(git: Git, startPath: string): Promise<RepoInfo | null> {
-  const probe = await git.tryRun(startPath, [
+  const probe = await git.tryRead(startPath, [
     'rev-parse',
     '--path-format=absolute',
     '--git-dir',
@@ -88,8 +88,8 @@ export async function discover(git: Git, startPath: string): Promise<RepoInfo | 
   // --is-bare-repository and --show-superproject-working-tree are asked separately because
   // --show-toplevel *fails outright* inside a bare repo, and one failing option fails the lot.
   const [bareOut, superOut] = await Promise.all([
-    git.run(startPath, ['rev-parse', '--is-bare-repository']),
-    git.run(startPath, ['rev-parse', '--path-format=absolute', '--show-superproject-working-tree']),
+    git.runRead(startPath, ['rev-parse', '--is-bare-repository']),
+    git.runRead(startPath, ['rev-parse', '--path-format=absolute', '--show-superproject-working-tree']),
   ]);
 
   const isBare = firstLine(bareOut) === 'true';
@@ -97,7 +97,7 @@ export async function discover(git: Git, startPath: string): Promise<RepoInfo | 
 
   const root = isBare
     ? commonDir
-    : firstLine(await git.run(startPath, ['rev-parse', '--path-format=absolute', '--show-toplevel']));
+    : firstLine(await git.runRead(startPath, ['rev-parse', '--path-format=absolute', '--show-toplevel']));
 
   return {
     root,
@@ -114,7 +114,7 @@ export async function discover(git: Git, startPath: string): Promise<RepoInfo | 
  * per worktree, with `<key> <value>` lines and bare `<key>` flags.
  */
 export async function listWorktrees(git: Git, repo: RepoInfo): Promise<Worktree[]> {
-  const out = await git.run(repo.root, ['worktree', 'list', '--porcelain']);
+  const out = await git.runRead(repo.root, ['worktree', 'list', '--porcelain']);
   const worktrees: Worktree[] = [];
 
   for (const block of out.split(/\r?\n\r?\n/)) {

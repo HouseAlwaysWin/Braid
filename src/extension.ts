@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { Git } from './git/exec.ts';
 import type { RepoInfo } from './git/discovery.ts';
 import { discover } from './git/discovery.ts';
-import { BraidPanel } from './panel.ts';
+import { BraidPanel, setPanelLogger } from './panel.ts';
 import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
 import { RefsProvider } from './refsView.ts';
 
@@ -62,6 +62,7 @@ async function findRepository(git: Git): Promise<RepoInfo | null> {
 
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('Braid', { log: true });
+  setPanelLogger(output);
   context.subscriptions.push(output);
 
   const config = vscode.workspace.getConfiguration('braid');

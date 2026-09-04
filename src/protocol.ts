@@ -14,6 +14,7 @@ import type { GraphDelta } from './graph/layout.ts';
 import type { GitRef } from './git/logParser.ts';
 import type { CommitDetails } from './git/details.ts';
 import type { Search } from './git/search.ts';
+import type { MenuItem, Target } from './actions/registry.ts';
 
 /** One commit as the webview needs it - the extension's richer `Commit` is not sent wholesale. */
 export interface Row {
@@ -44,6 +45,14 @@ export type HostMessage =
   | { readonly type: 'details'; readonly details: CommitDetails }
   /** The repository changed under us and the graph has been reloaded from scratch. */
   | { readonly type: 'reloading'; readonly reason: string }
+  | {
+      readonly type: 'menu';
+      readonly target: Target;
+      readonly items: readonly MenuItem[];
+      /** Echoed back from the request so the menu opens where the click was. */
+      readonly x: number;
+      readonly y: number;
+    }
   | { readonly type: 'error'; readonly message: string };
 
 export type WebviewMessage =
@@ -53,4 +62,7 @@ export type WebviewMessage =
   | { readonly type: 'selectCommit'; readonly sha: string }
   /** Open one of the selected commit's files in VS Code's diff editor. */
   | { readonly type: 'openDiff'; readonly sha: string; readonly index: number }
-  | { readonly type: 'copy'; readonly text: string };
+  | { readonly type: 'copy'; readonly text: string }
+  /** Right-click: the host decides what is on the menu, because availability depends on repo state. */
+  | { readonly type: 'requestMenu'; readonly target: Target; readonly x: number; readonly y: number }
+  | { readonly type: 'runAction'; readonly id: string; readonly target: Target };

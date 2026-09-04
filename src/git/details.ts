@@ -118,8 +118,8 @@ export async function loadCommitDetails(
   const options = signal === undefined ? {} : { signal };
 
   const [meta, raw] = await Promise.all([
-    git.run(repo.root, ['show', '--no-patch', '--no-show-signature', `--format=${DETAIL_FORMAT}`, sha], options),
-    git.run(
+    git.runRead(repo.root, ['show', '--no-patch', '--no-show-signature', `--format=${DETAIL_FORMAT}`, sha], options),
+    git.runRead(
       repo.root,
       [
         'show',
