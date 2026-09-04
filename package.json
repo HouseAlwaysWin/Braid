@@ -48,6 +48,12 @@
         "title": "Show All Branches & Tags",
         "category": "Braid",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "braid.stash",
+        "title": "Stash Changes",
+        "category": "Braid",
+        "icon": "$(archive)"
       }
     ],
     "menus": {
@@ -61,6 +67,10 @@
       "commandPalette": [
         {
           "command": "braid.refresh",
+          "when": "braid.graphVisible"
+        },
+        {
+          "command": "braid.stash",
           "when": "braid.graphVisible"
         }
       ],

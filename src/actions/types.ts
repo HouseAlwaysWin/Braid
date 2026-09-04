@@ -34,7 +34,16 @@ export type Target =
       readonly refName: string;
       readonly label: string;
       readonly refKind: 'local' | 'remote' | 'tag';
-    };
+    }
+  | {
+      readonly kind: 'stash';
+      /** `stash@{0}` - a position, which is why actions re-verify it against the SHA. */
+      readonly name: string;
+      readonly sha: string;
+      readonly message: string;
+    }
+  /** The repository itself, for actions with nothing in the graph to aim at. */
+  | { readonly kind: 'repo' };
 
 export interface ConfirmRequest {
   readonly title: string;
@@ -115,12 +124,31 @@ export function blockedByOperation(state: RepoState): string | null {
   return operation === null ? null : `Finish ${operation} first`;
 }
 
-/** What a commit-or-ref target points at, in a form git accepts. */
+/** What a target points at, in a form git accepts as a revision. */
 export function revisionOf(target: Target): string {
-  return target.kind === 'commit' ? target.sha : target.refName;
+  switch (target.kind) {
+    case 'commit':
+      return target.sha;
+    case 'ref':
+      return target.refName;
+    case 'stash':
+      // By SHA, never by position: stash@{0} means something different after a drop.
+      return target.sha;
+    default:
+      return 'HEAD';
+  }
 }
 
 /** How a target reads in a menu label or a message. */
 export function shortLabel(target: Target): string {
-  return target.kind === 'commit' ? target.sha.slice(0, 8) : target.label;
+  switch (target.kind) {
+    case 'commit':
+      return target.sha.slice(0, 8);
+    case 'ref':
+      return target.label;
+    case 'stash':
+      return target.name;
+    default:
+      return 'the repository';
+  }
 }

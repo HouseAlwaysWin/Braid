@@ -120,6 +120,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('braid.showAllRefs', () => refs.showAll()),
 
+    vscode.commands.registerCommand('braid.stash', () => {
+      const panel = BraidPanel.active();
+
+      if (panel === null) {
+        void vscode.window.showInformationMessage('Braid: open the graph first.');
+        return;
+      }
+
+      panel.runRepoAction('braid.stashPush');
+    }),
+
     vscode.commands.registerCommand('braid.refresh', () => {
       const panel = BraidPanel.active();
 

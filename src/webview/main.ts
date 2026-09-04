@@ -143,6 +143,10 @@ function renderRows(): void {
     el.style.top = `${i * rowHeight}px`;
     el.style.paddingLeft = `${graphWidth + 8}px`;
 
+    if (row.stash !== undefined) {
+      el.append(span('ref stash', row.stash));
+    }
+
     for (const ref of row.refs) {
       const badge = document.createElement('span');
       badge.className = `ref ${ref.kind}`;
@@ -182,7 +186,13 @@ function renderRows(): void {
 
     el.addEventListener('click', () => select(i));
     el.addEventListener('contextmenu', (event) =>
-      openMenu(event, { kind: 'commit', sha: row.sha, subject: row.subject }),
+      openMenu(
+        event,
+        // A stash row is a commit underneath, but the actions worth offering are entirely different.
+        row.stash === undefined
+          ? { kind: 'commit', sha: row.sha, subject: row.subject }
+          : { kind: 'stash', name: row.stash, sha: row.sha, message: row.subject },
+      ),
     );
 
     frag.append(el);

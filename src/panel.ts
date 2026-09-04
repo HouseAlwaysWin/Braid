@@ -20,6 +20,7 @@ import type { HostMessage, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
 import { RepoLock } from './git/lock.ts';
 import { readRepoState } from './git/repoState.ts';
+import { listStashes } from './git/stash.ts';
 import { mapGitError } from './git/errors.ts';
 import type { ActionContext, ActionUi, Target } from './actions/registry.ts';
 import { buildMenu, confirmIfNeeded, findAction } from './actions/registry.ts';
@@ -242,6 +243,11 @@ export class BraidPanel {
     void this.reload();
   }
 
+  /** Run an action that targets the repository rather than anything in the graph. */
+  runRepoAction(id: string): void {
+    void this.runAction(id, { kind: 'repo' });
+  }
+
   private async onMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
       case 'ready':
@@ -427,6 +433,11 @@ export class BraidPanel {
     const loader = new HistoryLoader(this.git, this.repo);
     const started = Date.now();
 
+    // Only the newest stash is a ref, so the rest have to be named by SHA or the walk never sees
+    // them. Cheap enough to re-read on every reload; a repository has a handful, not thousands.
+    const stashList = await listStashes(this.git, this.repo).catch(() => []);
+    const stashes = new Map(stashList.map((stash) => [stash.sha, stash.name]));
+
     /*
      * Fingerprint the refs alongside the walk, not before it. Awaiting here put two more process
      * spawns on the critical path between the user's click and the first row on screen, which on
@@ -449,14 +460,19 @@ export class BraidPanel {
             return;
           }
 
-          const rows: Row[] = page.commits.map((c) => ({
-            sha: c.sha,
-            subject: c.subject,
-            author: c.author,
-            date: c.authorDate,
-            refs: c.refs,
-            isHead: c.isHead,
-          }));
+          const rows: Row[] = page.commits.map((c) => {
+            const stash = stashes.get(c.sha);
+
+            return {
+              sha: c.sha,
+              subject: c.subject,
+              author: c.author,
+              date: c.authorDate,
+              refs: c.refs,
+              isHead: c.isHead,
+              ...(stash === undefined ? {} : { stash }),
+            };
+          });
 
           this.post({ type: 'page', rows, delta: page.delta });
         },
@@ -465,6 +481,7 @@ export class BraidPanel {
           maxCommits: config.get<number>('maxCommits', 250_000),
           filters: searchArgs(this.search),
           refs: this.refFilter(),
+          stashes,
         },
         controller.signal,
       );

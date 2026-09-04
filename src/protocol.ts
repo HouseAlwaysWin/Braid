@@ -24,6 +24,8 @@ export interface Row {
   readonly date: string;
   readonly refs: readonly GitRef[];
   readonly isHead: boolean;
+  /** `stash@{0}` when this row is a stash rather than a commit. */
+  readonly stash?: string;
 }
 
 export type HostMessage =

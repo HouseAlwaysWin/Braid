@@ -517,3 +517,10 @@ body {
   margin: 4px 0;
   background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border, #454545));
 }
+
+/* A stash is not a branch or a tag, and reading it as one would be misleading. */
+.ref.stash {
+  color: var(--vscode-charts-purple, #b180d7);
+  border-color: var(--vscode-charts-purple, #b180d7);
+  font-family: var(--vscode-editor-font-family);
+}

@@ -41,6 +41,11 @@ export interface HistoryOptions {
    */
   readonly refs?: readonly string[] | null;
   readonly firstParentOnly?: boolean;
+  /**
+   * Stash commits to fold into the walk, keyed by SHA. Only the newest stash is a ref, so the rest
+   * have to be named explicitly or they are invisible.
+   */
+  readonly stashes?: ReadonlyMap<string, string>;
 }
 
 export class HistoryLoader {
@@ -71,17 +76,44 @@ export class HistoryLoader {
     const maxCommits = options.maxCommits ?? 250_000;
     const layoutOptions = { firstParentOnly: options.firstParentOnly ?? false };
 
-    // An empty ref list is not the same as no ref list: it means the user unticked everything, and
-    // the honest answer to that is an empty graph rather than the whole history.
     const refs = options.refs ?? null;
+    const stashes = options.stashes ?? new Map<string, string>();
+
+    /*
+     * An empty ref list is not the same as no ref list: it means the user unticked everything.
+     *
+     * This has to short-circuit rather than pass no revisions to git, because `git log` with no
+     * revision argument defaults to HEAD - so "show me nothing" would quietly render the entire
+     * history reachable from the current branch, which looks exactly like the filter being broken.
+     */
+    if (refs !== null && refs.length === 0) {
+      onPage({ commits: [], delta: finishLayout(this.state), done: true });
+      return;
+    }
 
     const args = [
       'log',
       ...LOG_ARGS,
       ...(refs === null ? ['--all'] : refs),
+      ...stashes.keys(),
       `--max-count=${maxCommits}`,
       ...(options.filters ?? []),
     ];
+
+    /**
+     * A stash records two or three parents - where HEAD was, the index, and any untracked files -
+     * and only the first is history. Drawn literally every stash becomes a three-way merge into
+     * commits that exist for no reason the user would recognise, so the rest are dropped here,
+     * before the layout ever sees them.
+     */
+    const foldStashParents = (commits: Commit[]): Commit[] =>
+      stashes.size === 0
+        ? commits
+        : commits.map((commit) =>
+            stashes.has(commit.sha) && commit.parents.length > 1
+              ? { ...commit, parents: commit.parents.slice(0, 1) }
+              : commit,
+          );
 
     const interner = new Interner();
     let buffer = '';
@@ -110,7 +142,7 @@ export class HistoryLoader {
 
         for (const part of parts) {
           if (part.length > 0) {
-            batch.push(...parseLog(part, interner));
+            batch.push(...foldStashParents(parseLog(part, interner)));
           }
         }
 
@@ -123,7 +155,7 @@ export class HistoryLoader {
 
     // Whatever git wrote after the final separator is the last record.
     if (buffer.length > 0) {
-      batch.push(...parseLog(buffer, interner));
+      batch.push(...foldStashParents(parseLog(buffer, interner)));
     }
 
     flush();

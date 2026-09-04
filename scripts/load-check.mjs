@@ -26,6 +26,7 @@ function makeTempRepo() {
   runGit(dir, 'config', 'user.name', 'Braid Test');
   runGit(dir, 'config', 'user.email', 'test@example.invalid');
   runGit(dir, 'config', 'commit.gpgsign', 'false');
+  runGit(dir, 'config', 'core.autocrlf', 'false');
 
   for (const n of [1, 2, 3]) {
     commitInto(dir, n);

@@ -24,6 +24,8 @@ import { Remedy, mapGitError } from '../src/git/errors.ts';
 import type { ActionUi, Target } from '../src/actions/registry.ts';
 import { buildMenu, confirmIfNeeded, findAction } from '../src/actions/registry.ts';
 import { RepoLock } from '../src/git/lock.ts';
+import { listStashes } from '../src/git/stash.ts';
+import { HistoryLoader } from '../src/git/history.ts';
 
 const git = new Git({});
 const made: string[] = [];
@@ -41,6 +43,7 @@ function makeRepo(): string {
   sh(dir, 'config', 'user.name', 'Braid Test');
   sh(dir, 'config', 'user.email', 'test@example.invalid');
   sh(dir, 'config', 'commit.gpgsign', 'false');
+  sh(dir, 'config', 'core.autocrlf', 'false');
 
   writeFileSync(join(dir, 'a.txt'), 'one\n');
   sh(dir, 'add', '-A');
@@ -410,4 +413,159 @@ test('checking out a commit detaches HEAD and says how to get back', async () =>
   assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), first);
   assert.match(result.message, /detached/);
   assert.match(result.message, /git checkout main/);
+});
+
+const stashTarget = (name: string, sha: string, message = 'WIP'): Target => ({
+  kind: 'stash',
+  name,
+  sha,
+  message,
+});
+
+/** A repository with two stashes: stash@{0} is the newer one. */
+function makeRepoWithStashes(): string {
+  const dir = makeRepo();
+
+  writeFileSync(join(dir, 'a.txt'), 'first change\n');
+  sh(dir, 'stash', 'push', '-m', 'older');
+  writeFileSync(join(dir, 'a.txt'), 'second change\n');
+  sh(dir, 'stash', 'push', '-m', 'newer');
+
+  return dir;
+}
+
+test('stashes are listed newest first, with their positions', async () => {
+  const repo = await open(makeRepoWithStashes());
+  const stashes = await listStashes(git, repo);
+
+  assert.equal(stashes.length, 2);
+  assert.equal(stashes[0]?.name, 'stash@{0}');
+  assert.match(stashes[0]?.message ?? '', /newer/);
+  assert.match(stashes[1]?.message ?? '', /older/);
+});
+
+test('a stash is drawn with one parent, not the two or three git records', async () => {
+  const dir = makeRepoWithStashes();
+  const repo = await open(dir);
+  const stashes = await listStashes(git, repo);
+  const top = stashes[0];
+
+  assert.notEqual(top, undefined);
+
+  // git really does record more than one parent - that is what is being folded away.
+  const rawParents = sh(dir, 'rev-list', '--parents', '-n', '1', top!.sha).trim().split(' ').slice(1);
+  assert.equal(rawParents.length >= 2, true, 'a stash commit has an index parent as well as HEAD');
+
+  const loader = new HistoryLoader(git, repo);
+  const seen: string[][] = [];
+
+  await loader.load(
+    (page) => {
+      for (const c of page.commits) {
+        if (c.sha === top!.sha) {
+          seen.push(c.parents);
+        }
+      }
+    },
+    { stashes: new Map(stashes.map((s) => [s.sha, s.name])) },
+  );
+
+  assert.deepEqual(seen.length, 1, 'the stash should appear in the walk exactly once');
+  assert.deepEqual(seen[0]?.length, 1, 'only the commit HEAD was on is history');
+  assert.equal(seen[0]?.[0], rawParents[0]);
+});
+
+test('applying a stash restores the change and leaves the entry in place', async () => {
+  const dir = makeRepoWithStashes();
+  const repo = await open(dir);
+  const top = (await listStashes(git, repo))[0]!;
+
+  const result = await run(dir, 'braid.stashApply', stashTarget(top.name, top.sha));
+
+  assert.equal(result.ran, true);
+  assert.equal(readFileSync(join(dir, 'a.txt'), 'utf8'), 'second change\n');
+  assert.equal((await listStashes(git, repo)).length, 2, 'apply keeps the stash');
+});
+
+test('popping a stash restores the change and removes the entry', async () => {
+  const dir = makeRepoWithStashes();
+  const repo = await open(dir);
+  const top = (await listStashes(git, repo))[0]!;
+
+  await run(dir, 'braid.stashPop', stashTarget(top.name, top.sha));
+
+  assert.equal(readFileSync(join(dir, 'a.txt'), 'utf8'), 'second change\n');
+  assert.equal((await listStashes(git, repo)).length, 1, 'pop drops the stash it applied');
+});
+
+test('dropping a stash hands over the sha it can be recovered from', async () => {
+  const dir = makeRepoWithStashes();
+  const repo = await open(dir);
+  const top = (await listStashes(git, repo))[0]!;
+  const ui = fakeUi();
+
+  await run(dir, 'braid.stashDrop', stashTarget(top.name, top.sha, 'WIP on main'), ui);
+
+  assert.match(ui.confirmations[0] ?? '', new RegExp(`git stash apply ${top.sha}`));
+  assert.equal((await listStashes(git, repo)).length, 1);
+
+  // The claim in that confirmation has to be true, not just reassuring.
+  sh(dir, 'stash', 'apply', top.sha);
+  assert.equal(readFileSync(join(dir, 'a.txt'), 'utf8'), 'second change\n');
+});
+
+test('a stash position that has shifted underneath us is refused, not acted on', async () => {
+  const dir = makeRepoWithStashes();
+  const repo = await open(dir);
+  const before = await listStashes(git, repo);
+  const stale = before[0]!;
+
+  // Someone else drops the top stash: stash@{1} slides into stash@{0}, and a menu built a moment
+  // ago now names the wrong thing.
+  sh(dir, 'stash', 'drop', 'stash@{0}');
+
+  const result = await run(dir, 'braid.stashDrop', stashTarget('stash@{0}', stale.sha));
+
+  assert.equal(result.ran, false);
+  assert.match(result.message, /different stash|no longer exists/);
+  assert.equal((await listStashes(git, repo)).length, 1, 'the surviving stash must still be there');
+});
+
+test('stashing is not offered when there is nothing to stash', async () => {
+  const repo = await open(makeRepo());
+  const state = await readRepoState(git, repo);
+  const clean = buildMenu({ kind: 'repo' }, state).find((i) => i.id === 'braid.stashPush');
+
+  assert.equal(clean?.disabledReason, 'Nothing to stash');
+});
+
+test('unticking every ref shows an empty graph, not the whole history', async () => {
+  // `git log` with no revision argument means HEAD, so "walk nothing" has to be handled before git
+  // is ever spawned - otherwise the filter silently shows everything.
+  const repo = await open(makeRepo());
+  const loader = new HistoryLoader(git, repo);
+  let delivered = 0;
+  let finished = false;
+
+  await loader.load(
+    (page) => {
+      delivered += page.commits.length;
+      finished ||= page.done;
+    },
+    { refs: [] },
+  );
+
+  assert.equal(delivered, 0, 'no refs visible means no commits');
+  assert.equal(finished, true, 'the view still needs to be told the load finished');
+  assert.equal(loader.rowCount, 0);
+});
+
+test('a ref list that is absent still means everything', async () => {
+  const repo = await open(makeRepo());
+  const loader = new HistoryLoader(git, repo);
+  let delivered = 0;
+
+  await loader.load((page) => (delivered += page.commits.length), {});
+
+  assert.equal(delivered, 2, 'main and feature between them have two commits');
 });
