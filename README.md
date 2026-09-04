@@ -1,14 +1,13 @@
 # Braid
 
-A Git commit graph for VS Code. Read-only, and fast on large repositories.
+A Git commit graph for VS Code, fast on large repositories.
 
 Braid is an independent extension, written from scratch. It is not a fork of, and shares no code
 with, any other graph extension.
 
 ## Status
 
-Early. The vertical slice works end to end — discover a repository, stream its history, lay out the
-lanes, render the graph — and there is nothing destructive in it: Braid only ever *reads*.
+Early, but in daily use. Reading is complete; writing is arriving one tier at a time.
 
 Working:
 
@@ -80,7 +79,7 @@ should hold, and the next optimisation is a columnar store rather than one objec
 ```bash
 npm install
 npm run build      # or: npm run watch
-npm test           # unit tests for the layout algorithm
+npm test           # build, unit tests, then a full end-to-end run against a throwaway repo
 npm run typecheck
 ```
 
