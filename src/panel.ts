@@ -70,12 +70,14 @@ export class BraidPanel {
   private signature: string | null = null;
   private signaturePromise: Promise<string | null> | null = null;
   private search: Search | null = null;
+  private readonly refFilter: () => string[] | null;
 
   static show(
     extensionUri: vscode.Uri,
     git: Git,
     repo: RepoInfo,
     column: vscode.ViewColumn,
+    refFilter: () => string[] | null,
   ): BraidPanel {
     const existing = BraidPanel.open.get(repo.root);
     if (existing !== undefined) {
@@ -96,7 +98,7 @@ export class BraidPanel {
       },
     );
 
-    const braid = new BraidPanel(panel, extensionUri, git, repo);
+    const braid = new BraidPanel(panel, extensionUri, git, repo, refFilter);
     BraidPanel.open.set(repo.root, braid);
     return braid;
   }
@@ -106,11 +108,13 @@ export class BraidPanel {
     extensionUri: vscode.Uri,
     git: Git,
     repo: RepoInfo,
+    refFilter: () => string[] | null,
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.git = git;
     this.repo = repo;
+    this.refFilter = refFilter;
 
     panel.webview.html = this.html(panel.webview);
 
@@ -328,6 +332,7 @@ export class BraidPanel {
           batchSize: 500,
           maxCommits: config.get<number>('maxCommits', 250_000),
           filters: searchArgs(this.search),
+          refs: this.refFilter(),
         },
         controller.signal,
       );

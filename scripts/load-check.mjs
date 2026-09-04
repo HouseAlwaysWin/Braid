@@ -56,6 +56,15 @@ const problems = [];
 const contentProviders = new Map();
 const diffsOpened = [];
 let statusBarItem = null;
+let treeProvider = null;
+let checkboxHandler = null;
+
+class StubEmitter {
+  constructor() { this.listeners = []; }
+  get event() { return (fn) => { this.listeners.push(fn); return { dispose() {} }; }; }
+  fire(v) { for (const l of [...this.listeners]) l(v); }
+  dispose() {}
+}
 
 const uri = (p) => ({
   fsPath: p,
@@ -99,6 +108,13 @@ const vscodeStub = {
     showInformationMessage: (m) => problems.push(`unexpected info message: ${m}`),
     showWarningMessage: (m) => problems.push(`unexpected warning: ${m}`),
     setStatusBarMessage: () => ({ dispose() {} }),
+    createTreeView: (id, options) => {
+      treeProvider = options.treeDataProvider;
+      return {
+        onDidChangeCheckboxState: (fn) => { checkboxHandler = fn; return { dispose() {} }; },
+        dispose() {},
+      };
+    },
     createStatusBarItem: (id, alignment, priority) => {
       statusBarItem = { id, alignment, priority, visible: false };
       return {
@@ -141,6 +157,11 @@ const vscodeStub = {
     },
   },
   StatusBarAlignment: { Left: 1, Right: 2 },
+  EventEmitter: StubEmitter,
+  ThemeIcon: class { constructor(id) { this.id = id; } },
+  TreeItem: class { constructor(label, collapsibleState) { this.label = label; this.collapsibleState = collapsibleState; } },
+  TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+  TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   workspace: {
     workspaceFolders: [{ uri: uri(repoPath) }],
     getConfiguration: () => ({ get: (_key, fallback) => fallback }),
@@ -345,6 +366,79 @@ if (done === undefined) {
   if (cleared !== baseline) {
     problems.push(`clearing the search gave ${cleared} commits, expected ${baseline}`);
   }
+}
+
+/*
+ * Ref filtering has to be a real filter, not a display trick: unticking refs must narrow what
+ * `git log` walks, so the commit count actually drops.
+ */
+if (treeProvider !== null && checkboxHandler !== null) {
+  const groups = treeProvider.getChildren();
+  const allRefs = groups.flatMap((g) => treeProvider.getChildren(g));
+
+  console.log(
+    '\nrefs sidebar   :',
+    groups.map((g) => `${g.label} (${treeProvider.getChildren(g).length})`).join(', '),
+  );
+
+  const baseline = done?.total ?? 0;
+  const keep = allRefs.find((r) => r.label === 'master') ?? allRefs[0];
+
+  if (keep === undefined) {
+    problems.push('the refs sidebar listed nothing');
+  } else {
+    const before = posted.filter((m) => m.type === 'done').length;
+    checkboxHandler({ items: allRefs.filter((r) => r !== keep).map((r) => [r, 0]) });
+
+    const deadline = Date.now() + 20_000;
+    let narrowed = null;
+
+    while (Date.now() < deadline) {
+      const dones = posted.filter((m) => m.type === 'done');
+      if (dones.length > before) {
+        narrowed = dones[dones.length - 1];
+        break;
+      }
+
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    if (narrowed === null) {
+      problems.push('unticking refs did not reload the graph');
+    } else {
+      console.log(`kept only      : ${keep.label}`);
+      console.log(`commits        : ${baseline} -> ${narrowed.total}`);
+
+      if (narrowed.total >= baseline) {
+        problems.push(`filtering to one ref did not narrow the walk (${narrowed.total} of ${baseline})`);
+      }
+
+      // And putting them back must restore the full history.
+      const beforeRestore = posted.filter((m) => m.type === 'done').length;
+      await commands.get('braid.showAllRefs')();
+
+      const restoreDeadline = Date.now() + 20_000;
+      let restored = null;
+
+      while (Date.now() < restoreDeadline) {
+        const dones = posted.filter((m) => m.type === 'done');
+        if (dones.length > beforeRestore) {
+          restored = dones[dones.length - 1];
+          break;
+        }
+
+        await new Promise((r) => setTimeout(r, 25));
+      }
+
+      console.log(`show all       : ${restored === null ? 'NO RELOAD' : restored.total}`);
+
+      if (restored === null || restored.total !== baseline) {
+        problems.push('Show All Branches & Tags did not restore the full history');
+      }
+    }
+  }
+} else {
+  problems.push('no refs tree view was registered');
 }
 
 /*

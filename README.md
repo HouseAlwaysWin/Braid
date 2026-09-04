@@ -20,20 +20,24 @@ Working:
 - Double-click a file to open it in VS Code's own diff editor, renames included
 - Search by message, author, diff content (`-G`) or path, pushed down into `git log`
 - Auto-refresh: commit from a terminal and the graph reloads itself
+- Ref filtering from the sidebar: untick branches, remotes or tags to keep them out of the walk
 - Draggable split between the graph and the details pane, and a tree/flat toggle for the
   changed-file list - both remembered across panel reloads
 
-Not built yet: ref filtering, stash rows, and jumping to a commit by hash. Write operations
+Not built yet: stash rows and jumping to a commit by hash. Write operations
 (checkout, merge, rebase, …) are deliberately out of scope for v1 — Braid only ever *reads*.
 
 ## Where to find it
 
-Braid opens as an editor tab, not a sidebar view, so it has no Activity Bar icon - the same shape
-as the extension it replaces. Three ways in:
+The graph opens as an editor tab. Three ways in:
 
 - The **Braid** button in the status bar (hidden when the workspace has no repository)
 - The branch icon in the **Source Control** title bar
 - **Braid: Open Git Graph** in the command palette
+
+The Activity Bar icon opens the **Branches & Tags** sidebar rather than the graph - VS Code puts
+view containers there, not commands. Unticking a ref there narrows what `git log` walks, so a
+repository carrying two hundred `origin/dependabot/*` branches stops paying for them.
 
 ## Design notes
 

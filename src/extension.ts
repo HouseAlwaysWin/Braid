@@ -5,6 +5,7 @@ import type { RepoInfo } from './git/discovery.ts';
 import { discover } from './git/discovery.ts';
 import { BraidPanel } from './panel.ts';
 import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
+import { RefsProvider } from './refsView.ts';
 
 let output: vscode.LogOutputChannel | undefined;
 
@@ -77,7 +78,19 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
 
+  const refs = new RefsProvider(git);
+  const refsView = vscode.window.createTreeView('braid.refs', {
+    treeDataProvider: refs,
+    showCollapseAll: true,
+  });
+
   context.subscriptions.push(
+    refsView,
+    refs.attach(refsView),
+
+    // Unticking a ref narrows the walk, so the graph has to be rebuilt rather than merely repainted.
+    refs.onDidChangeFilter(() => BraidPanel.active()?.refresh()),
+
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, new RevisionContentProvider(git)),
 
     vscode.commands.registerCommand('braid.openGraph', async () => {
@@ -93,13 +106,18 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
+      await refs.setRepository(repo);
+
       BraidPanel.show(
         context.extensionUri,
         git,
         repo,
         vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One,
+        () => refs.visibleRefs(),
       );
     }),
+
+    vscode.commands.registerCommand('braid.showAllRefs', () => refs.showAll()),
 
     vscode.commands.registerCommand('braid.refresh', () => {
       const panel = BraidPanel.active();
@@ -116,9 +134,9 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   /*
-   * The status bar is Braid's only always-visible entry point: the graph opens as an editor tab,
-   * not a sidebar view, so there is nothing in the Activity Bar to click. (An Activity Bar icon is
-   * not an option on its own - VS Code puts view containers there, not commands.)
+   * One click to the graph itself. The Activity Bar icon opens the refs sidebar rather than the
+   * graph - VS Code puts view containers there, not commands - so the status bar is what gets you
+   * straight to the thing you came for.
    *
    * It is hidden in workspaces with no repository, because an entry point to something that cannot
    * open is worse than no entry point.
@@ -158,6 +176,10 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   void updateStatusBar();
+
+  // Populate the sidebar before the graph is ever opened, so clicking the Activity Bar icon does
+  // not land on an empty room.
+  void findRepository(git).then((repo) => refs.setRepository(repo));
 
   output.info('Braid activated');
 }

@@ -35,6 +35,11 @@ export interface HistoryOptions {
   readonly maxCommits?: number;
   /** Extra `git log` arguments - this is where search and filter push work down into git. */
   readonly filters?: readonly string[];
+  /**
+   * Refs to walk. Omit, or pass null, to walk everything via `--all` - cheaper than spelling out
+   * hundreds of refs on a command line when none of them are filtered out anyway.
+   */
+  readonly refs?: readonly string[] | null;
   readonly firstParentOnly?: boolean;
 }
 
@@ -66,10 +71,14 @@ export class HistoryLoader {
     const maxCommits = options.maxCommits ?? 250_000;
     const layoutOptions = { firstParentOnly: options.firstParentOnly ?? false };
 
+    // An empty ref list is not the same as no ref list: it means the user unticked everything, and
+    // the honest answer to that is an empty graph rather than the whole history.
+    const refs = options.refs ?? null;
+
     const args = [
       'log',
       ...LOG_ARGS,
-      '--all',
+      ...(refs === null ? ['--all'] : refs),
       `--max-count=${maxCommits}`,
       ...(options.filters ?? []),
     ];
