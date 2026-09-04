@@ -18,6 +18,7 @@ import { workAtRisk } from '../git/repoState.ts';
 import { BRANCH_ACTIONS } from './branches.ts';
 import { COMMIT_ACTIONS } from './commit.ts';
 import { MERGE_ACTIONS } from './merge.ts';
+import { NETWORK_ACTIONS } from './network.ts';
 import { STASH_ACTIONS } from './stash.ts';
 
 export type {
@@ -25,6 +26,7 @@ export type {
   ActionContext,
   ActionResult,
   ActionUi,
+  ChooseRequest,
   ConfirmRequest,
   InputRequest,
   MenuItem,
@@ -37,11 +39,12 @@ export const ACTIONS: readonly Action[] = [
   ...BRANCH_ACTIONS,
   ...COMMIT_ACTIONS,
   ...MERGE_ACTIONS,
+  ...NETWORK_ACTIONS,
   ...STASH_ACTIONS,
 ];
 
 /** Menu sections, top to bottom. Anything unlisted sorts to the end, before danger. */
-const GROUP_ORDER = ['branch', 'create', 'commit', 'stash', 'operation', 'danger'];
+const GROUP_ORDER = ['branch', 'create', 'commit', 'stash', 'remote', 'operation', 'danger'];
 
 export function buildMenu(target: Target, state: RepoState): MenuItem[] {
   const rank = (group: string): number => {

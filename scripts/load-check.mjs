@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import Module from 'node:module';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -272,7 +272,18 @@ if (statusBarItem === null) {
 }
 console.log('subscriptions  :', context.subscriptions.length);
 
-for (const expected of ['braid.openGraph', 'braid.refresh', 'braid.showGitLog']) {
+/*
+ * Every contributed command must actually be registered. Read from package.json rather than a list
+ * kept here, because the failure this catches is exactly a list going stale: `braid.refresh` once
+ * shipped in the manifest with nothing behind it, and a hand-maintained expectation would have to
+ * be updated by the same person who forgot the registration.
+ */
+const contributed = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  .contributes.commands.map((entry) => entry.command);
+
+console.log('contributed    :', contributed.length, 'commands');
+
+for (const expected of contributed) {
   if (!commands.has(expected)) {
     problems.push(`contributed but never registered: ${expected}`);
   }

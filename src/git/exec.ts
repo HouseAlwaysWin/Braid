@@ -26,12 +26,23 @@ export interface GitRunOptions {
   readonly signal?: AbortSignal;
   /** Fed to git on stdin, for the commands that read a list of paths. */
   readonly stdin?: string;
+  /**
+   * Kill the process after this long with **no output at all**. Zero disables it.
+   *
+   * Deliberately an idle timeout and not a total one. A first fetch of a large repository can
+   * legitimately run for minutes, so any total budget generous enough not to break it is too
+   * generous to catch a hung connection - which is the thing worth catching. git talks constantly
+   * while it transfers (given `--progress`), so silence is the actual symptom.
+   */
+  readonly idleTimeoutMs?: number;
 }
 
 export interface GitResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number;
+  /** Set when the process was killed for going quiet, so the caller can say so rather than guess. */
+  readonly timedOut: boolean;
 }
 
 export class GitError extends Error {
@@ -45,6 +56,20 @@ export class GitError extends Error {
     this.args = args;
     this.exitCode = exitCode;
     this.stderr = stderr;
+  }
+}
+
+/** A network command that went silent. Separate from GitError because there is no stderr to read. */
+export class GitTimeoutError extends Error {
+  readonly args: readonly string[];
+
+  constructor(args: readonly string[], idleMs: number) {
+    super(
+      `The remote stopped responding: no output for ${Math.round(idleMs / 1000)}s, so Braid gave up waiting. ` +
+        'Nothing was changed locally.',
+    );
+    this.name = 'GitTimeoutError';
+    this.args = args;
   }
 }
 
@@ -67,8 +92,11 @@ const FORCED_CONFIG = [
   'log.showSignature=false',
 ];
 
-/** Reads observe the repository; writes change it. They do not want the same environment. */
-export type GitMode = 'read' | 'write';
+/**
+ * Reads observe the repository; writes change it; network commands do both and talk to a server.
+ * None of the three wants the same environment.
+ */
+export type GitMode = 'read' | 'write' | 'network';
 
 /**
  * Environment a git call runs under.
@@ -87,7 +115,7 @@ export type GitMode = 'read' | 'write';
  * will never launch, holding the repository lock while it waits. `true` is a program that exits 0
  * immediately, which is exactly the "editor" these commands need.
  */
-function gitEnv(mode: GitMode): NodeJS.ProcessEnv {
+function gitEnv(mode: GitMode, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const base: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_TERMINAL_PROMPT: '0',
@@ -103,26 +131,50 @@ function gitEnv(mode: GitMode): NodeJS.ProcessEnv {
     GIT_EDITOR: 'true',
     GIT_SEQUENCE_EDITOR: 'true',
     GIT_MERGE_AUTOEDIT: 'no',
+    ...extra,
   };
+}
+
+/**
+ * Whether an ssh command is OpenSSH, and so understands `-o BatchMode=yes`.
+ *
+ * Only the first token is examined, and only its file name: `C:\Program Files\Git\usr\bin\ssh.exe -i key`
+ * is OpenSSH, `plink.exe` and a hand-written wrapper script are not.
+ */
+function isOpenSsh(command: string): boolean {
+  const trimmed = command.trim();
+  const first = trimmed.startsWith('"')
+    ? trimmed.slice(1, trimmed.indexOf('"', 1))
+    : (trimmed.split(/\s+/)[0] ?? '');
+
+  const name = first.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+  return name === 'ssh' || name === 'ssh.exe';
 }
 
 /** git writes progress to stderr forever; nothing we run should produce more than this. */
 const MAX_BUFFER = 256 * 1024 * 1024;
 
+/** How long a network command may say nothing at all before Braid stops waiting for it. */
+export const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
+
 export class Git {
   private readonly gitPath: string;
   private readonly maxConcurrent: number;
   private readonly onCommand: ((entry: GitLogEntry) => void) | undefined;
+  private readonly networkIdleTimeoutMs: number;
   private active = 0;
   private readonly waiting: (() => void)[] = [];
 
   constructor(options: {
     gitPath?: string;
     maxConcurrent?: number;
+    /** Zero waits forever, for anyone whose remote is genuinely that slow. */
+    networkIdleTimeoutMs?: number;
     onCommand?: (entry: GitLogEntry) => void;
   } = {}) {
     this.gitPath = options.gitPath ?? 'git';
     this.maxConcurrent = Math.max(1, options.maxConcurrent ?? 4);
+    this.networkIdleTimeoutMs = options.networkIdleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.onCommand = options.onCommand;
   }
 
@@ -148,6 +200,64 @@ export class Git {
     return this.throwOnFailure(result, args);
   }
 
+  /**
+   * Run a command that talks to a remote.
+   *
+   * Three things separate this from `runWrite`:
+   *
+   * - **An idle timeout.** A dead connection is indistinguishable from a slow one except that it
+   *   says nothing at all, so silence is what gets timed rather than total duration.
+   * - **BatchMode for ssh**, so ssh fails instead of stopping to ask for a passphrase or to confirm
+   *   an unknown host key. In a terminal those are prompts; here they are a process that never
+   *   returns. See `sshEnv` for why this is done so carefully.
+   * - **No credential handling of any kind.** Braid uses whatever credential helper is already
+   *   configured; `GIT_TERMINAL_PROMPT=0` means an unauthenticated remote fails fast with a message
+   *   rather than hanging, and signing in stays where the user already does it.
+   */
+  async runNetwork(
+    cwd: string,
+    args: readonly string[],
+    options: GitRunOptions = {},
+  ): Promise<string> {
+    const env = await this.sshEnv(cwd);
+    const idleTimeoutMs = options.idleTimeoutMs ?? this.networkIdleTimeoutMs;
+    const result = await this.execute(cwd, args, { ...options, idleTimeoutMs }, 'network', env);
+
+    if (result.timedOut) {
+      throw new GitTimeoutError(args, idleTimeoutMs);
+    }
+
+    return this.throwOnFailure(result, args);
+  }
+
+  /**
+   * What to set `GIT_SSH_COMMAND` to, if anything.
+   *
+   * The temptation is to just set it and get BatchMode. That would be a bug: `GIT_SSH_COMMAND`
+   * overrides `core.sshCommand`, so setting it blindly replaces a per-repository deploy key or a
+   * different ssh binary with plain `ssh` - breaking a push that worked before Braid touched it.
+   * `GIT_SSH` is the same trap in older form, and on Windows it is often plink.
+   *
+   * So: add BatchMode to a command that is recognisably OpenSSH, supply one when there is none, and
+   * otherwise leave the user's setup alone and let the idle timeout be the backstop.
+   */
+  private async sshEnv(cwd: string): Promise<NodeJS.ProcessEnv> {
+    if (process.env.GIT_SSH !== undefined && process.env.GIT_SSH_COMMAND === undefined) {
+      return {};
+    }
+
+    const configured =
+      process.env.GIT_SSH_COMMAND ??
+      (await this.tryRead(cwd, ['config', '--get', 'core.sshCommand']).catch(() => null))?.stdout.trim() ??
+      '';
+
+    if (configured.length === 0) {
+      return { GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' };
+    }
+
+    return isOpenSsh(configured) ? { GIT_SSH_COMMAND: `${configured} -o BatchMode=yes` } : {};
+  }
+
   /** Run git and hand back the exit code instead of throwing - for the probes that expect failure. */
   async tryRead(
     cwd: string,
@@ -170,12 +280,13 @@ export class Git {
     args: readonly string[],
     options: GitRunOptions,
     mode: GitMode,
+    extraEnv: NodeJS.ProcessEnv = {},
   ): Promise<GitResult> {
     await this.acquire();
     const started = Date.now();
 
     try {
-      const result = await this.spawn(cwd, args, options, mode);
+      const result = await this.spawn(cwd, args, options, mode, extraEnv);
 
       this.onCommand?.({
         args,
@@ -300,6 +411,7 @@ export class Git {
     args: readonly string[],
     options: GitRunOptions,
     mode: GitMode,
+    extraEnv: NodeJS.ProcessEnv = {},
   ): Promise<GitResult> {
     return new Promise<GitResult>((resolve, reject) => {
       if (options.signal?.aborted === true) {
@@ -312,13 +424,14 @@ export class Git {
         // No shell: arguments reach git exactly as written, whatever they contain.
         shell: false,
         windowsHide: true,
-        env: gitEnv(mode),
+        env: gitEnv(mode, extraEnv),
       });
 
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       let stdoutLength = 0;
       let settled = false;
+      let timedOut = false;
 
       const onAbort = (): void => {
         if (!settled) {
@@ -328,17 +441,37 @@ export class Git {
 
       options.signal?.addEventListener('abort', onAbort, { once: true });
 
+      // Reset by every byte git produces, so a transfer that is merely slow is never cut off.
+      const idleMs = options.idleTimeoutMs ?? 0;
+      let idleTimer: NodeJS.Timeout | undefined;
+
+      const bumpIdle = (): void => {
+        if (idleMs <= 0 || settled) {
+          return;
+        }
+
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, idleMs);
+      };
+
+      bumpIdle();
+
       const finish = (fn: () => void): void => {
         if (settled) {
           return;
         }
 
         settled = true;
+        clearTimeout(idleTimer);
         options.signal?.removeEventListener('abort', onAbort);
         fn();
       };
 
       child.stdout.on('data', (chunk: Buffer) => {
+        bumpIdle();
         stdoutLength += chunk.length;
         if (stdoutLength > MAX_BUFFER) {
           child.kill();
@@ -349,7 +482,10 @@ export class Git {
         stdout.push(chunk);
       });
 
-      child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+      child.stderr.on('data', (chunk: Buffer) => {
+        bumpIdle();
+        stderr.push(chunk);
+      });
 
       child.on('error', (err) => finish(() => reject(err)));
 
@@ -365,6 +501,7 @@ export class Git {
             stdout: Buffer.concat(stdout).toString('utf8'),
             stderr: Buffer.concat(stderr).toString('utf8'),
             exitCode: code ?? (signal !== null ? 128 : 1),
+            timedOut,
           });
         });
       });

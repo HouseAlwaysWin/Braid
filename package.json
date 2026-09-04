@@ -66,6 +66,29 @@
         "title": "Show All Authors",
         "category": "Braid",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "braid.fetch",
+        "title": "Fetch",
+        "category": "Braid",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "braid.pull",
+        "title": "Pull",
+        "category": "Braid",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "braid.push",
+        "title": "Push",
+        "category": "Braid",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "braid.pushForce",
+        "title": "Force Push (with lease)",
+        "category": "Braid"
       }
     ],
     "menus": {
@@ -84,6 +107,39 @@
         {
           "command": "braid.stash",
           "when": "braid.graphVisible"
+        },
+        {
+          "command": "braid.fetch",
+          "when": "braid.graphVisible"
+        },
+        {
+          "command": "braid.pull",
+          "when": "braid.graphVisible"
+        },
+        {
+          "command": "braid.push",
+          "when": "braid.graphVisible"
+        },
+        {
+          "command": "braid.pushForce",
+          "when": "braid.graphVisible"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "braid.fetch",
+          "when": "activeWebviewPanelId == braid.graph",
+          "group": "navigation@1"
+        },
+        {
+          "command": "braid.pull",
+          "when": "activeWebviewPanelId == braid.graph",
+          "group": "navigation@2"
+        },
+        {
+          "command": "braid.push",
+          "when": "activeWebviewPanelId == braid.graph",
+          "group": "navigation@3"
         }
       ],
       "view/title": [
@@ -144,6 +200,13 @@
           "type": "boolean",
           "default": true,
           "description": "Give each author their own colour in the commit list. Always off in high contrast themes."
+        },
+        "braid.networkIdleTimeoutSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "maximum": 3600,
+          "markdownDescription": "Give up on a fetch, pull or push after this many seconds with **no output at all**. This is idle time, not total time, so a slow but live transfer is never cut off. `0` waits forever."
         },
         "braid.statusBar.enabled": {
           "type": "boolean",

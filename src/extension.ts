@@ -61,6 +61,18 @@ async function findRepository(git: Git): Promise<RepoInfo | null> {
   return null;
 }
 
+/** Run an action that targets the repository, which needs a graph to run against. */
+function repoAction(id: string): void {
+  const panel = BraidPanel.active();
+
+  if (panel === null) {
+    void vscode.window.showInformationMessage('Braid: open the graph first.');
+    return;
+  }
+
+  panel.runRepoAction(id);
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   output = vscode.window.createOutputChannel('Braid', { log: true });
   setPanelLogger(output);
@@ -70,6 +82,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const git = new Git({
     maxConcurrent: config.get<number>('maxConcurrentGitProcesses', 4),
+    networkIdleTimeoutMs: config.get<number>('networkIdleTimeoutSeconds', 60) * 1000,
     onCommand: (entry) => {
       const line = `git ${entry.args.join(' ')} (${entry.durationMs}ms)`;
       if (entry.failed) {
@@ -182,16 +195,17 @@ export function activate(context: vscode.ExtensionContext): void {
       picker.show();
     }),
 
-    vscode.commands.registerCommand('braid.stash', () => {
-      const panel = BraidPanel.active();
+    vscode.commands.registerCommand('braid.stash', () => repoAction('braid.stashPush')),
 
-      if (panel === null) {
-        void vscode.window.showInformationMessage('Braid: open the graph first.');
-        return;
-      }
-
-      panel.runRepoAction('braid.stashPush');
-    }),
+    /*
+     * Fetch, pull and push, whose command ids are their action ids. Force push is deliberately not
+     * among the title-bar buttons: it is the one action here that can destroy work living only on
+     * someone else's clone, and a button for it one pixel from Push is an accident waiting to
+     * happen. The command palette is far enough away to be a decision.
+     */
+    ...['braid.fetch', 'braid.pull', 'braid.push', 'braid.pushForce'].map((id) =>
+      vscode.commands.registerCommand(id, () => repoAction(id)),
+    ),
 
     vscode.commands.registerCommand('braid.refresh', () => {
       const panel = BraidPanel.active();

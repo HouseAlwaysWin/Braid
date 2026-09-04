@@ -64,12 +64,30 @@ export interface InputRequest {
   validate?(value: string): string | null;
 }
 
+export interface ChooseRequest {
+  readonly title: string;
+  /** The consequence of each option, spelled out. */
+  readonly detail: string;
+  /** In order, safest first. */
+  readonly options: readonly string[];
+}
+
 /** Everything an action needs from the outside world. */
 export interface ActionUi {
   confirm(request: ConfirmRequest): Promise<boolean>;
   /** null when the user dismissed the prompt. An empty string is a deliberate empty answer. */
   input(request: InputRequest): Promise<string | null>;
-  progress<T>(title: string, work: () => Promise<T>): Promise<T>;
+  /**
+   * A question with more than two answers - merge or rebase, which remote. Distinct from `confirm`
+   * because "are you sure?" cannot express a choice between two things that are both fine.
+   */
+  choose(request: ChooseRequest): Promise<string | null>;
+  /**
+   * The signal is aborted if the user cancels, which only happens when `cancellable` is set. Local
+   * commands leave it off: killing git halfway through writing an index is not a favour. Network
+   * commands set it, because a push that is going nowhere has to be stoppable.
+   */
+  progress<T>(title: string, work: (signal: AbortSignal) => Promise<T>, cancellable?: boolean): Promise<T>;
   notify(message: string): void;
 }
 

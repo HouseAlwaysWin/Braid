@@ -29,11 +29,15 @@ Working:
   authors to show only theirs. Both narrow what `git log` walks rather than hiding rows
 - A text filter for the branch list itself, for repositories with more refs than fit on screen
 - Each author gets their own colour, derived from the name so it never shifts as pages stream in
+- Fetch, pull and push, using whatever credential helper is already set up - Braid never asks for
+  a password and never stores one. Pull asks whether to merge or rebase only when the histories
+  have actually diverged, and force push is `--force-with-lease` after a fetch, never `--force`
 - Draggable split between the graph and the details pane, and a tree/flat toggle for the
   changed-file list - both remembered across panel reloads
 
-Write operations are arriving one tier at a time. Anything that could destroy uncommitted work
-names the files it would destroy before asking; nothing passes `--force` by default. Still to come: fetch, pull and push.
+Anything that could destroy uncommitted work names the files it would destroy before asking, and
+nothing passes `--force` by default. Still to come: comparing two commits, and following one file
+through history.
 
 ## Where to find it
 

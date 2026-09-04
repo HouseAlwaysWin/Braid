@@ -16,10 +16,20 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { Git, GitError } from '../src/git/exec.ts';
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
+
+import { Git, GitError, GitTimeoutError } from '../src/git/exec.ts';
 import { discover } from '../src/git/discovery.ts';
 import type { RepoInfo } from '../src/git/discovery.ts';
-import { Operation, parseStatus, readOperation, readRepoState, workAtRisk } from '../src/git/repoState.ts';
+import {
+  Operation,
+  parseBranchHeader,
+  parseStatus,
+  readOperation,
+  readRepoState,
+  workAtRisk,
+} from '../src/git/repoState.ts';
 import { Remedy, mapGitError } from '../src/git/errors.ts';
 import type { ActionUi, Target } from '../src/actions/registry.ts';
 import { buildMenu, confirmIfNeeded, findAction } from '../src/actions/registry.ts';
@@ -71,17 +81,32 @@ async function open(dir: string): Promise<RepoInfo> {
  * answers null, which every action treats as a cancel.
  */
 function fakeUi(
-  options: { confirm?: boolean; inputs?: string[] } = {},
-): ActionUi & { confirmations: string[]; prompts: string[] } {
+  options: {
+    confirm?: boolean;
+    inputs?: string[];
+    /** Answers for `choose`, in order. Running out answers null, which is a cancel. */
+    choices?: string[];
+    /** Runs while the confirmation is "open" - for testing what a race actually does. */
+    whileConfirming?: () => void;
+  } = {},
+): ActionUi & { confirmations: string[]; prompts: string[]; questions: string[] } {
   const confirmations: string[] = [];
   const prompts: string[] = [];
+  const questions: string[] = [];
   const inputs = [...(options.inputs ?? [])];
+  const choices = [...(options.choices ?? [])];
 
   return {
     confirmations,
     prompts,
+    questions,
+    choose: async (request) => {
+      questions.push(request.title);
+      return choices.shift() ?? null;
+    },
     confirm: async (request) => {
       confirmations.push(request.detail);
+      options.whileConfirming?.();
       return options.confirm ?? true;
     },
     input: async (request) => {
@@ -96,7 +121,7 @@ function fakeUi(
       assert.equal(rejection, null, `the test supplied a value the action rejects: ${rejection}`);
       return next;
     },
-    progress: async (_title, work) => work(),
+    progress: async (_title, work) => work(new AbortController().signal),
     notify: () => undefined,
   };
 }
@@ -816,5 +841,377 @@ test('the controls are all unavailable when nothing is in progress', async () =>
       'Nothing in progress',
       `${id} should be unavailable`,
     );
+  }
+});
+
+/* ------------------------------------------------------------------ network operations
+ *
+ * A bare repository on disk is a real remote as far as git is concerned, so every one of these
+ * runs end to end - a genuine push, a genuine rejection - with no network, no credentials and
+ * nothing external to be flaky. The cases worth having are the refusals: a push that is rejected,
+ * and a lease that holds.
+ */
+
+/** A repository with a bare `origin` it has already pushed `main` to. */
+function makeRepoWithRemote(): { dir: string; remote: string } {
+  const dir = makeRepo();
+  const remote = mkdtempSync(join(tmpdir(), 'braid-remote-')).split('\\').join('/') + '/origin.git';
+
+  made.push(remote);
+  sh(dir, 'init', '-q', '--bare', '-b', 'main', remote);
+  sh(dir, 'remote', 'add', 'origin', remote);
+  sh(dir, 'push', '-q', '-u', 'origin', 'main');
+
+  return { dir, remote };
+}
+
+/** Somebody else's clone of the same remote, for the races that only two people can produce. */
+function cloneOf(remote: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'braid-other-')).split('\\').join('/') + '/clone';
+
+  made.push(dir);
+  execFileSync('git', ['clone', '-q', remote, dir], { encoding: 'utf8' });
+  sh(dir, 'config', 'user.name', 'Someone Else');
+  sh(dir, 'config', 'user.email', 'other@example.invalid');
+  sh(dir, 'config', 'commit.gpgsign', 'false');
+
+  return dir;
+}
+
+function commitIn(dir: string, file: string, text: string, message: string): string {
+  writeFileSync(join(dir, file), text);
+  sh(dir, 'add', '-A');
+  sh(dir, 'commit', '-q', '-m', message);
+  return sh(dir, 'rev-parse', 'HEAD').trim();
+}
+
+test('the branch header carries the upstream and both counts', () => {
+  assert.deepEqual(parseBranchHeader('## main...origin/main [ahead 1, behind 2]\x00'), {
+    ref: 'origin/main',
+    ahead: 1,
+    behind: 2,
+    gone: false,
+  });
+
+  assert.deepEqual(parseBranchHeader('## main...origin/main\x00'), {
+    ref: 'origin/main',
+    ahead: 0,
+    behind: 0,
+    gone: false,
+  });
+
+  assert.equal(parseBranchHeader('## main...origin/main [gone]\x00')?.gone, true);
+
+  // No upstream, detached, and an unborn branch all mean "nothing to compare against".
+  assert.equal(parseBranchHeader('## solo\x00'), null);
+  assert.equal(parseBranchHeader('## HEAD (no branch)\x00'), null);
+  assert.equal(parseBranchHeader('## No commits yet on main\x00'), null);
+});
+
+test('a branch header is not mistaken for a changed file', () => {
+  const files = parseStatus('## main...origin/main [ahead 1]\x00 M a.txt\x00');
+
+  assert.deepEqual(files.map((f) => f.path), ['a.txt']);
+});
+
+test('state reads the remotes and where the branch stands against its upstream', async () => {
+  const { dir } = makeRepoWithRemote();
+  const state = await readRepoState(git, await open(dir));
+
+  assert.deepEqual(state.remotes, ['origin']);
+  assert.deepEqual(state.upstream, { ref: 'origin/main', ahead: 0, behind: 0, gone: false });
+
+  commitIn(dir, 'c.txt', 'three\n', 'third');
+  const ahead = await readRepoState(git, await open(dir));
+
+  assert.equal(ahead.upstream?.ahead, 1);
+});
+
+test('pushing a branch that tracks nothing publishes it and sets the upstream', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+  sh(dir, 'checkout', '-q', 'feature');
+
+  const result = await run(dir, 'braid.push', repoTarget());
+
+  assert.equal(result.ran, true);
+  assert.match(result.message, /track/);
+  assert.equal(
+    sh(remote, 'rev-parse', 'refs/heads/feature').trim(),
+    sh(dir, 'rev-parse', 'HEAD').trim(),
+    'the remote should have the branch',
+  );
+  assert.equal(sh(dir, 'config', '--get', 'branch.feature.remote').trim(), 'origin');
+});
+
+test('pushing an existing upstream reports how many commits went', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+  commitIn(dir, 'c.txt', 'three\n', 'third');
+  commitIn(dir, 'd.txt', 'four\n', 'fourth');
+
+  const result = await run(dir, 'braid.push', repoTarget());
+
+  assert.match(result.message, /2 commits/);
+  assert.equal(sh(remote, 'rev-parse', 'main').trim(), sh(dir, 'rev-parse', 'HEAD').trim());
+});
+
+test('pushing with nothing to push says so instead of running git', async () => {
+  const { dir } = makeRepoWithRemote();
+  const result = await run(dir, 'braid.push', repoTarget());
+
+  assert.match(result.message, /already has everything/);
+});
+
+test('a push the remote has moved past is rejected, and the message says why', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+
+  const other = cloneOf(remote);
+  commitIn(other, 'theirs.txt', 'theirs\n', 'from someone else');
+  sh(other, 'push', '-q');
+
+  commitIn(dir, 'ours.txt', 'ours\n', 'ours');
+
+  await assert.rejects(
+    () => run(dir, 'braid.push', repoTarget()),
+    (err: unknown) => {
+      const mapped = mapGitError(err);
+      assert.match(mapped.message, /remote/i);
+      assert.deepEqual(mapped.remedies, [Remedy.Fetch], 'and offers to go and look');
+      return true;
+    },
+  );
+
+  // The important half: the remote still has their commit, not ours.
+  assert.equal(sh(remote, 'rev-parse', 'main').trim(), sh(other, 'rev-parse', 'HEAD').trim());
+});
+
+test('force push says how many commits on the remote it would strand', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+
+  const other = cloneOf(remote);
+  commitIn(other, 'theirs.txt', 'theirs\n', 'from someone else');
+  sh(other, 'push', '-q');
+
+  commitIn(dir, 'ours.txt', 'ours\n', 'ours');
+
+  const ui = fakeUi({ confirm: false });
+  const result = await run(dir, 'braid.pushForce', repoTarget(), ui);
+
+  assert.equal(result.ran, false, 'declining leaves the remote alone');
+  assert.match(ui.confirmations[0] ?? '', /1 commit on origin\/main will stop being reachable/);
+  assert.match(ui.confirmations[0] ?? '', /not in your reflog/);
+  assert.equal(sh(remote, 'rev-parse', 'main').trim(), sh(other, 'rev-parse', 'HEAD').trim());
+});
+
+test('force push replaces the remote branch once it is confirmed', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+
+  const other = cloneOf(remote);
+  commitIn(other, 'theirs.txt', 'theirs\n', 'from someone else');
+  sh(other, 'push', '-q');
+
+  const ours = commitIn(dir, 'ours.txt', 'ours\n', 'ours');
+  const result = await run(dir, 'braid.pushForce', repoTarget());
+
+  assert.equal(result.ran, true);
+  assert.equal(sh(remote, 'rev-parse', 'main').trim(), ours);
+});
+
+test('the lease refuses a force push when the remote moved while the dialog was open', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+
+  const other = cloneOf(remote);
+  commitIn(other, 'theirs.txt', 'theirs\n', 'from someone else');
+  sh(other, 'push', '-q');
+
+  commitIn(dir, 'ours.txt', 'ours\n', 'ours');
+
+  // This is the whole point of --force-with-lease over --force: the fetch inside confirmDetail
+  // has already run, so the lease is current, and then somebody pushes anyway.
+  const theirsLatest = { sha: '' };
+  const ui = fakeUi({
+    whileConfirming: () => {
+      theirsLatest.sha = commitIn(other, 'theirs2.txt', 'more\n', 'and another');
+      sh(other, 'push', '-q');
+    },
+  });
+
+  await assert.rejects(
+    () => run(dir, 'braid.pushForce', repoTarget(), ui),
+    (err: unknown) => {
+      assert.match(mapGitError(err).message, /lease refused/);
+      return true;
+    },
+  );
+
+  assert.equal(
+    sh(remote, 'rev-parse', 'main').trim(),
+    theirsLatest.sha,
+    'their newest commit survives - which --force would have destroyed',
+  );
+});
+
+test('fetch updates the remote-tracking ref and touches nothing else', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+  const before = sh(dir, 'rev-parse', 'HEAD').trim();
+
+  const other = cloneOf(remote);
+  const theirs = commitIn(other, 'theirs.txt', 'theirs\n', 'from someone else');
+  sh(other, 'push', '-q');
+
+  const result = await run(dir, 'braid.fetch', repoTarget());
+
+  assert.match(result.message, /1 commit/);
+  assert.equal(sh(dir, 'rev-parse', 'origin/main').trim(), theirs);
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), before, 'HEAD does not move');
+  assert.equal(sh(dir, 'status', '--porcelain').trim(), '', 'and the tree stays clean');
+});
+
+test('pull fast-forwards without asking anything', async () => {
+  const { dir, remote } = makeRepoWithRemote();
+
+  const other = cloneOf(remote);
+  const theirs = commitIn(other, 'theirs.txt', 'theirs\n', 'from someone else');
+  sh(other, 'push', '-q');
+
+  const ui = fakeUi();
+  const result = await run(dir, 'braid.pull', repoTarget(), ui);
+
+  assert.deepEqual(ui.questions, [], 'a fast-forward is not a decision');
+  assert.match(result.message, /Fast-forwarded 1 commit/);
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), theirs);
+});
+
+test('pull with nothing to get says so', async () => {
+  const { dir } = makeRepoWithRemote();
+  const result = await run(dir, 'braid.pull', repoTarget());
+
+  assert.match(result.message, /Already up to date/);
+});
+
+/** Both sides move, which is the case `git pull` refuses to decide on its own. */
+function makeDivergence(): { dir: string; remote: string; theirs: string } {
+  const { dir, remote } = makeRepoWithRemote();
+  const other = cloneOf(remote);
+  const theirs = commitIn(other, 'theirs.txt', 'theirs\n', 'from someone else');
+
+  sh(other, 'push', '-q');
+  commitIn(dir, 'ours.txt', 'ours\n', 'ours');
+
+  return { dir, remote, theirs };
+}
+
+test('pull asks how to reconcile when both sides have moved, and merges when told to', async () => {
+  const { dir, theirs } = makeDivergence();
+  const ui = fakeUi({ choices: ['Merge'] });
+
+  const result = await run(dir, 'braid.pull', repoTarget(), ui);
+
+  assert.equal(ui.questions.length, 1, 'it asks exactly once');
+  assert.match(ui.questions[0] ?? '', /have both moved/);
+  assert.equal(result.ran, true);
+
+  const parents = sh(dir, 'rev-list', '--parents', '-n', '1', 'HEAD').trim().split(' ');
+  assert.equal(parents.length, 3, 'a merge commit');
+  assert.ok(parents.includes(theirs), 'with their commit as a parent');
+});
+
+test('pull rebases instead when told to, and keeps one line of history', async () => {
+  const { dir, theirs } = makeDivergence();
+  const ui = fakeUi({ choices: ['Rebase'] });
+
+  const result = await run(dir, 'braid.pull', repoTarget(), ui);
+
+  assert.match(result.message, /Rebased 1 commit/);
+
+  const parents = sh(dir, 'rev-list', '--parents', '-n', '1', 'HEAD').trim().split(' ');
+  assert.equal(parents.length, 2, 'not a merge');
+  assert.equal(parents[1], theirs, 'replayed straight onto theirs');
+});
+
+test('dismissing the question leaves the repository exactly where it was', async () => {
+  const { dir } = makeDivergence();
+  const head = sh(dir, 'rev-parse', 'HEAD').trim();
+
+  const result = await run(dir, 'braid.pull', repoTarget(), fakeUi({ choices: [] }));
+
+  assert.equal(result.ran, false);
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), head);
+  assert.equal(await readOperation((await open(dir)).gitDir), Operation.None);
+});
+
+test('the in-progress banner offers only ways out of the operation', async () => {
+  const { dir } = makeRepoWithRemote();
+  const state = await readRepoState(git, await open(dir));
+
+  // The banner renders every repo-targeted action in the `operation` group. Selecting by exclusion
+  // instead put Force Push in there, one click from someone trying to escape a bad rebase.
+  const banner = buildMenu(repoTarget(), state)
+    .filter((item) => item.group === 'operation')
+    .map((item) => item.id);
+
+  assert.deepEqual(banner.sort(), [
+    'braid.abortOperation',
+    'braid.continueOperation',
+    'braid.skipOperation',
+  ]);
+});
+
+test('network actions are unavailable with no remote, and say which is missing', async () => {
+  const repo = await open(makeRepo());
+  const state = await readRepoState(git, repo);
+  const menu = buildMenu(repoTarget(), state);
+
+  for (const id of ['braid.fetch', 'braid.pull', 'braid.push', 'braid.pushForce']) {
+    assert.equal(menu.find((item) => item.id === id)?.disabledReason, 'No remotes configured', id);
+  }
+});
+
+test('pull is unavailable on a branch that tracks nothing', async () => {
+  const { dir } = makeRepoWithRemote();
+  sh(dir, 'checkout', '-q', 'feature');
+
+  const state = await readRepoState(git, await open(dir));
+  const menu = buildMenu(repoTarget(), state);
+
+  assert.equal(
+    menu.find((item) => item.id === 'braid.pull')?.disabledReason,
+    'This branch is not tracking a remote',
+  );
+
+  // Push is still offered - that is exactly how a branch gets an upstream in the first place.
+  assert.equal(menu.find((item) => item.id === 'braid.push')?.disabledReason, null);
+});
+
+test('a remote that connects and then says nothing is given up on, not waited on forever', async () => {
+  const dir = makeRepo();
+
+  // Accepts the connection and never answers, which is what a hung remote looks like from here.
+  // The error handler matters: killing git resets the socket, and an unhandled 'error' on it would
+  // fail this test for the very thing it is checking happens.
+  const server = createServer((socket) => {
+    socket.on('error', () => undefined);
+    socket.resume();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  try {
+    const started = Date.now();
+
+    await assert.rejects(
+      () =>
+        git.runNetwork(dir, ['fetch', `git://127.0.0.1:${port}/silent.git`], {
+          idleTimeoutMs: 1500,
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof GitTimeoutError, `expected a timeout, got ${String(err)}`);
+        assert.match((err as Error).message, /stopped responding/);
+        return true;
+      },
+    );
+
+    assert.ok(Date.now() - started < 15_000, 'and gives up promptly rather than hanging the host');
+  } finally {
+    server.close();
   }
 });

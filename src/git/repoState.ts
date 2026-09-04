@@ -39,6 +39,18 @@ export interface FileStatus {
   readonly conflicted: boolean;
 }
 
+/** Where the current branch stands against the branch it tracks. */
+export interface Upstream {
+  /** `origin/main`, as git spells it. */
+  readonly ref: string;
+  /** Commits on this branch that the upstream does not have. */
+  readonly ahead: number;
+  /** Commits on the upstream that this branch does not have. */
+  readonly behind: number;
+  /** Configured but no longer there - someone deleted the branch on the remote. */
+  readonly gone: boolean;
+}
+
 export interface RepoState {
   readonly operation: Operation;
   readonly head: string | null;
@@ -49,6 +61,48 @@ export interface RepoState {
   /** Existing local branch names - actions that create or rename need to know what is taken. */
   readonly branches: string[];
   readonly tags: string[];
+  readonly remotes: string[];
+  /** null when the branch tracks nothing, HEAD is detached, or the repository is bare. */
+  readonly upstream: Upstream | null;
+}
+
+/**
+ * The `## branch...upstream [ahead 1, behind 2]` line `git status -b` puts first.
+ *
+ * Free information: status is already being run, and this is the only way to get the branch, its
+ * upstream and both counts without three more processes. A branch name cannot contain `..`, so the
+ * three dots are an unambiguous separator rather than a guess.
+ */
+export function parseBranchHeader(output: string): Upstream | null {
+  const header = output.split('\x00').find((record) => record.startsWith('## '));
+
+  if (header === undefined) {
+    return null;
+  }
+
+  const body = header.slice(3);
+
+  // `## HEAD (no branch)` when detached, and an unborn branch has no counts to report either.
+  if (body.startsWith('No commits yet on')) {
+    return null;
+  }
+
+  const separator = body.indexOf('...');
+
+  if (separator < 0) {
+    return null;
+  }
+
+  const rest = body.slice(separator + 3);
+  const bracket = rest.indexOf(' [');
+  const track = bracket < 0 ? '' : rest.slice(bracket + 2, -1);
+
+  return {
+    ref: bracket < 0 ? rest : rest.slice(0, bracket),
+    ahead: Number(/ahead (\d+)/.exec(track)?.[1] ?? 0),
+    behind: Number(/behind (\d+)/.exec(track)?.[1] ?? 0),
+    gone: track === 'gone',
+  };
 }
 
 /**
@@ -130,6 +184,11 @@ export function parseStatus(output: string): FileStatus[] {
       continue;
     }
 
+    // `-b` puts a branch header in front of the file records; it is not a file.
+    if (record.startsWith('## ')) {
+      continue;
+    }
+
     const code = record.slice(0, 2);
     const path = record.slice(3);
     const x = code.charAt(0);
@@ -154,14 +213,16 @@ export function parseStatus(output: string): FileStatus[] {
 }
 
 export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState> {
-  const [operation, status, head, branch, refs] = await Promise.all([
+  const [operation, status, head, branch, refs, remotes] = await Promise.all([
     readOperation(repo.gitDir),
-    // A bare repository has no working tree, so there is nothing to be dirty.
-    repo.isBare ? Promise.resolve('') : git.runRead(repo.root, ['status', '--porcelain', '-z']),
+    // A bare repository has no working tree, so there is nothing to be dirty. `-b` costs nothing
+    // and carries the upstream and the ahead/behind counts, which network actions need.
+    repo.isBare ? Promise.resolve('') : git.runRead(repo.root, ['status', '--porcelain', '-z', '-b']),
     git.runRead(repo.root, ['rev-parse', 'HEAD']).catch(() => ''),
     // Empty output and a non-zero exit both mean "not on a branch"; -q keeps the noise down.
     git.runRead(repo.root, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => ''),
     git.runRead(repo.root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/tags']),
+    git.runRead(repo.root, ['remote']).catch(() => ''),
   ]);
 
   const names = refs
@@ -180,6 +241,8 @@ export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState
     files: parseStatus(status),
     branches: names.filter((r) => r.startsWith('refs/heads/')).map((r) => r.slice('refs/heads/'.length)),
     tags: names.filter((r) => r.startsWith('refs/tags/')).map((r) => r.slice('refs/tags/'.length)),
+    remotes: remotes.split('\n').map((line) => line.trim()).filter((line) => line.length > 0),
+    upstream: parseBranchHeader(status),
   };
 }
 

@@ -154,7 +154,9 @@ function control(
 ): Action {
   return {
     id: `braid.${kind}Operation`,
-    group: kind === 'abort' ? 'danger' : 'operation',
+    // All three are the same kind of thing - a way out - and the banner selects on exactly this.
+    // Abort still renders in red: the view styles by tier, not by group.
+    group: 'operation',
     tier: options.tier,
 
     label: () => options.label,

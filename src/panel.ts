@@ -30,16 +30,27 @@ export interface FilterSource {
 import { RepoLock } from './git/lock.ts';
 import { describeOperation, readRepoState } from './git/repoState.ts';
 import { listStashes } from './git/stash.ts';
-import { mapGitError } from './git/errors.ts';
+import { Remedy, mapGitError } from './git/errors.ts';
 import type { ActionContext, ActionUi, Target } from './actions/registry.ts';
 import { buildMenu, confirmIfNeeded, findAction } from './actions/registry.ts';
 
-/** Set by the extension so panels can write to the same output channel. */
-let output: { warn(message: string): void } | undefined;
+/** Set by the extension so panels can write to - and reveal - the same output channel. */
+type Logger = { warn(message: string): void; show(): void };
 
-export function setPanelLogger(logger: { warn(message: string): void }): void {
+let output: Logger | undefined;
+
+export function setPanelLogger(logger: Logger): void {
   output = logger;
 }
+
+/** What each remedy reads as on a button. Short enough to sit next to the message. */
+const REMEDY_LABELS: Record<Remedy, string> = {
+  [Remedy.StashAndRetry]: 'Stash and Retry',
+  [Remedy.ResolveConflicts]: 'Show Conflicts',
+  [Remedy.AbortOperation]: 'Abort',
+  [Remedy.Fetch]: 'Fetch',
+  [Remedy.ShowLog]: 'Show Git Log',
+};
 
 export const VIEW_TYPE = 'braid.graph';
 
@@ -119,12 +130,27 @@ export class BraidPanel {
       // actions treat as meaningful (a tag with no message is a lightweight tag).
       return value ?? null;
     },
+    choose: async (request) => {
+      const choice = await vscode.window.showWarningMessage(
+        request.title,
+        { modal: true, detail: request.detail },
+        ...request.options,
+      );
+
+      return choice ?? null;
+    },
+
     // withProgress hands back a Thenable; the registry deals in Promises so it can stay free of
-    // any vscode types and remain runnable from a test.
-    progress: async (title, work) =>
+    // any vscode types and remain runnable from a test. The cancellation token is translated to an
+    // AbortSignal for the same reason - actions never see a vscode type.
+    progress: async (title, work, cancellable = false) =>
       vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Braid: ${title}` },
-        work,
+        { location: vscode.ProgressLocation.Notification, title: `Braid: ${title}`, cancellable },
+        (_report, token) => {
+          const controller = new AbortController();
+          token.onCancellationRequested(() => controller.abort());
+          return work(controller.signal);
+        },
       ),
     notify: (message) => void vscode.window.setStatusBarMessage(`Braid: ${message}`, 4000),
   };
@@ -303,7 +329,7 @@ export class BraidPanel {
       const state = await readRepoState(this.git, this.repo);
       this.post({ type: 'menu', target, items: buildMenu(target, state), x, y });
     } catch (err) {
-      this.reportError(err);
+      void this.reportError(err);
     }
   }
 
@@ -314,11 +340,11 @@ export class BraidPanel {
    * has to still be true when it acts, and the watcher must not reload the graph from underneath a
    * half-finished operation.
    */
-  private async runAction(id: string, target: Target): Promise<void> {
+  private async runAction(id: string, target: Target, retrying = false): Promise<boolean> {
     const action = findAction(id);
 
     if (action === undefined) {
-      return;
+      return false;
     }
 
     try {
@@ -330,6 +356,7 @@ export class BraidPanel {
           this.post({ type: 'error', message: `${action.label(target)}: ${unavailable.toLowerCase()}` });
           return null;
         }
+
 
         const context: ActionContext = { git: this.git, repo: this.repo, state, target, ui: this.ui };
 
@@ -345,25 +372,79 @@ export class BraidPanel {
       });
 
       if (result === null) {
-        return;
+        return false;
       }
 
       await this.reload();
 
       const back = result.before === null ? '' : `  (was ${result.before.slice(0, 8)})`;
       void vscode.window.setStatusBarMessage(`Braid: ${result.outcome.message}${back}`, 5000);
+      return result.outcome.ran;
     } catch (err) {
-      this.reportError(err);
+      // One retry, never two: an offer to stash and retry that fails the same way must not become
+      // a loop of dialogs the user has to fight their way out of.
+      await this.reportError(err, retrying ? null : () => this.runAction(id, target, true));
+      return false;
     }
   }
 
-  private reportError(err: unknown): void {
+  private async reportError(err: unknown, retry: (() => Promise<unknown>) | null = null): Promise<void> {
     const mapped = mapGitError(err);
     const detail = mapped.paths.length === 0 ? '' : `\n\n${mapped.paths.map((p) => `  ${p}`).join('\n')}`;
 
     output?.warn(`${mapped.message}\n${mapped.raw}`);
-    void vscode.window.showWarningMessage(mapped.message + detail, { modal: mapped.paths.length > 0 });
     this.post({ type: 'error', message: mapped.message });
+
+    // git usually does say what to do about a failure; the whole point of mapping errors was to
+    // keep that advice instead of losing it in a wall of text. A remedy with no button is advice
+    // thrown away twice.
+    const offered = mapped.remedies.filter(
+      (remedy) => remedy !== Remedy.StashAndRetry || retry !== null,
+    );
+
+    const choice = await vscode.window.showWarningMessage(
+      mapped.message + detail,
+      { modal: mapped.paths.length > 0 },
+      ...offered.map((remedy) => REMEDY_LABELS[remedy]),
+    );
+
+    const chosen = offered.find((remedy) => REMEDY_LABELS[remedy] === choice);
+
+    if (chosen !== undefined) {
+      await this.applyRemedy(chosen, retry);
+    }
+  }
+
+  private async applyRemedy(remedy: Remedy, retry: (() => Promise<unknown>) | null): Promise<void> {
+    switch (remedy) {
+      case Remedy.ShowLog:
+        output?.show();
+        return;
+
+      case Remedy.ResolveConflicts:
+        // The banner above the graph already lists them, each a link into the merge editor.
+        this.panel.reveal();
+        return;
+
+      case Remedy.AbortOperation:
+        await this.runAction('braid.abortOperation', { kind: 'repo' });
+        return;
+
+      case Remedy.Fetch:
+        await this.runAction('braid.fetch', { kind: 'repo' });
+        return;
+
+      case Remedy.StashAndRetry:
+        // Only retry if the stash actually happened - otherwise the retry hits the same wall.
+        if (await this.runAction('braid.stashPush', { kind: 'repo' })) {
+          await retry?.();
+        }
+
+        return;
+
+      default:
+        return;
+    }
   }
 
   /**
@@ -440,7 +521,10 @@ export class BraidPanel {
       operation: state.operation,
       description: describeOperation(state.operation) ?? '',
       conflicted: state.files.filter((file) => file.conflicted).map((file) => file.path),
-      controls: buildMenu({ kind: 'repo' }, state).filter((item) => item.group !== 'stash'),
+      // An allow-list, not a deny-list: this banner is "you are mid-rebase, here is the way out",
+      // so anything that is not a way out has no business appearing in it. Selecting by exclusion
+      // is how Force Push turned up here.
+      controls: buildMenu({ kind: 'repo' }, state).filter((item) => item.group === 'operation'),
     });
   }
 

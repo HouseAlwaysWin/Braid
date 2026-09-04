@@ -26,6 +26,8 @@ export const Remedy = {
   AbortOperation: 'abort-operation',
   /** Show the git command log so the raw output is one click away. */
   ShowLog: 'show-log',
+  /** Update the remote-tracking refs, so the graph shows what the remote actually has. */
+  Fetch: 'fetch',
 } as const;
 
 export type Remedy = (typeof Remedy)[keyof typeof Remedy];
@@ -134,10 +136,62 @@ const RULES: Rule[] = [
       'git could not authenticate with the remote. Braid uses your existing credential helper - try the same operation from the Source Control view or a terminal to sign in.',
     remedies: [],
   },
+  /*
+   * Everything below is a network failure, and the order is load-bearing: git says "Updates were
+   * rejected" for four quite different situations, so the specific readings have to come before
+   * the general one or they are never reached.
+   */
+  {
+    // What --force-with-lease refuses on. The lease held a sha; the remote no longer has it.
+    match: /stale info/,
+    message: () =>
+      'The remote moved after Braid checked it, so the lease refused - someone pushed in the meantime. Nothing was overwritten.',
+    remedies: [Remedy.Fetch],
+  },
+  {
+    match: /Updates were rejected because the remote contains work that you do/,
+    message: () =>
+      'The remote branch already exists and has commits this branch does not. Pull before pushing.',
+    remedies: [Remedy.Fetch],
+  },
+  {
+    match: /Updates were rejected because the tip of your current branch is behind/,
+    message: () =>
+      'The remote is ahead of this branch, so pushing would drop commits. Pull first, or force push if you meant to replace them.',
+    remedies: [Remedy.Fetch],
+  },
   {
     match: /(Updates were rejected|non-fast-forward)/,
     message: () =>
       'The remote has commits you do not have locally, so this push was rejected. Pull first.',
+    remedies: [Remedy.Fetch],
+  },
+  {
+    match: /(protected branch|pre-receive hook declined|\[remote rejected\])/,
+    message: () => 'The remote refused this push - the branch is protected, or a server hook rejected it.',
+    remedies: [Remedy.ShowLog],
+  },
+  {
+    match: /shallow update not allowed/,
+    message: () =>
+      'This is a shallow clone, and the remote will not accept a push from one. Unshallow it first: git fetch --unshallow.',
+    remedies: [],
+  },
+  {
+    match: /(Could not resolve host|Connection timed out|Failed to connect|Network is unreachable|Connection refused)/,
+    message: () => 'Braid could not reach the remote. Check the connection, or that the host name is right.',
+    remedies: [],
+  },
+  {
+    match: /(Repository not found|does not appear to be a git repository|Could not read from remote repository)/,
+    message: () =>
+      'The remote did not answer as a git repository. Either the URL is wrong or the account being used cannot see it.',
+    remedies: [Remedy.ShowLog],
+  },
+  {
+    match: /(divergent branches|Not possible to fast-forward)/,
+    message: () =>
+      'This branch and its upstream have both moved, so there is no fast-forward. Pull, and Braid will ask whether to merge or rebase.',
     remedies: [],
   },
   {
