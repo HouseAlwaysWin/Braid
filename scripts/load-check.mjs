@@ -58,6 +58,7 @@ const diffsOpened = [];
 let statusBarItem = null;
 let treeProvider = null;
 let checkboxHandler = null;
+let treeView = null;
 
 class StubEmitter {
   constructor() { this.listeners = []; }
@@ -110,10 +111,12 @@ const vscodeStub = {
     setStatusBarMessage: () => ({ dispose() {} }),
     createTreeView: (id, options) => {
       treeProvider = options.treeDataProvider;
-      return {
+      treeView = {
+        message: undefined,
         onDidChangeCheckboxState: (fn) => { checkboxHandler = fn; return { dispose() {} }; },
         dispose() {},
       };
+      return treeView;
     },
     createStatusBarItem: (id, alignment, priority) => {
       statusBarItem = { id, alignment, priority, visible: false };
@@ -380,6 +383,19 @@ if (treeProvider !== null && checkboxHandler !== null) {
     '\nrefs sidebar   :',
     groups.map((g) => `${g.label} (${treeProvider.getChildren(g).length})`).join(', '),
   );
+  console.log('  message      :', JSON.stringify(treeView?.message));
+  console.log(
+    '  collapsed    :',
+    groups.every((g) => treeProvider.getTreeItem(g).collapsibleState === 1),
+  );
+
+  if (!groups.every((g) => treeProvider.getTreeItem(g).collapsibleState === 1)) {
+    problems.push('ref groups are not collapsed by default');
+  }
+
+  if (typeof treeView?.message !== 'string' || treeView.message.length === 0) {
+    problems.push('the refs view never explains what its checkboxes do');
+  }
 
   const baseline = done?.total ?? 0;
   const keep = allRefs.find((r) => r.label === 'master') ?? allRefs[0];
@@ -408,6 +424,12 @@ if (treeProvider !== null && checkboxHandler !== null) {
     } else {
       console.log(`kept only      : ${keep.label}`);
       console.log(`commits        : ${baseline} -> ${narrowed.total}`);
+      console.log('  message now  :', JSON.stringify(treeView?.message));
+
+      // Once the user has found the gesture, the line should report rather than keep instructing.
+      if (treeView?.message?.includes('Untick') === true) {
+        problems.push('the refs view still explains the gesture after it has been used');
+      }
 
       if (narrowed.total >= baseline) {
         problems.push(`filtering to one ref did not narrow the walk (${narrowed.total} of ${baseline})`);

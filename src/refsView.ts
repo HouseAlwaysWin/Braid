@@ -47,6 +47,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
 
   private repo: RepoInfo | null = null;
   private refs: Ref[] = [];
+  private view: vscode.TreeView<Node> | null = null;
 
   /**
    * Refs the user has switched off. Storing the *hidden* set rather than the visible one means a
@@ -131,6 +132,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     }
 
     this.changed.fire(undefined);
+    this.updateMessage();
   }
 
   getChildren(node?: Node): Node[] {
@@ -150,11 +152,12 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
       const children = this.refs.filter((ref) => ref.group.id === node.id);
       const shown = children.filter((ref) => !this.hidden.has(ref.refName)).length;
 
-      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.id = `group:${node.id}`;
       item.description = shown === children.length ? `${children.length}` : `${shown}/${children.length}`;
       item.checkboxState = shown > 0 ? Checked : Unchecked;
       item.contextValue = 'braidRefGroup';
+      item.tooltip = `Untick to keep every one of these out of the graph`;
       return item;
     }
 
@@ -162,7 +165,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     item.id = `ref:${node.refName}`;
     item.checkboxState = this.hidden.has(node.refName) ? Unchecked : Checked;
     item.contextValue = 'braidRef';
-    item.tooltip = node.refName;
+    item.tooltip = `${node.refName}\nUntick to keep it out of the graph`;
 
     item.iconPath = new vscode.ThemeIcon(
       node.group.id === 'tags' ? 'tag' : node.group.id === 'remotes' ? 'cloud' : 'git-branch',
@@ -183,6 +186,9 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
    * filter.
    */
   attach(view: vscode.TreeView<Node>): vscode.Disposable {
+    this.view = view;
+    this.updateMessage();
+
     return view.onDidChangeCheckboxState((event) => {
       for (const [node, state] of event.items) {
         const targets =
@@ -198,8 +204,35 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
       }
 
       this.changed.fire(undefined);
+      this.updateMessage();
       this.filterChanged.fire();
     });
+  }
+
+  /**
+   * The line above the tree.
+   *
+   * A checkbox next to a branch name does not say what ticking it does, and the groups are folded
+   * shut by default so there is nothing else to infer it from. While nothing is filtered the line
+   * explains the gesture; once something is, it stops teaching and starts reporting - an
+   * instruction that never goes away is just furniture.
+   */
+  private updateMessage(): void {
+    if (this.view === null) {
+      return;
+    }
+
+    // Empty rather than undefined: `exactOptionalPropertyTypes` rejects assigning undefined to an
+    // optional property, and an empty message hides the line just the same.
+    if (this.refs.length === 0) {
+      this.view.message = '';
+      return;
+    }
+
+    this.view.message =
+      this.hidden.size === 0
+        ? 'Untick a branch or tag to keep it out of the graph.'
+        : `${this.hidden.size} hidden — the graph shows the rest.`;
   }
 
   /** Turn every ref back on. */
@@ -210,6 +243,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
 
     this.hidden.clear();
     this.changed.fire(undefined);
+    this.updateMessage();
     this.filterChanged.fire();
   }
 }
