@@ -14,7 +14,7 @@
 
 import * as vscode from 'vscode';
 
-import type { CommitDetails, FileChange } from './git/details.ts';
+import type { CommitDetails, Comparison, FileChange } from './git/details.ts';
 import type { FileStatus } from './git/repoState.ts';
 import { pathAtUri, revisionUri } from './contentProvider.ts';
 
@@ -182,11 +182,35 @@ export function workingChanges(files: readonly FileStatus[]): FileChange[] {
  * For the working tree there is neither a commit nor an OID to hand - the right side is the file as
  * it is on disk right now, which is the whole reason for looking at it.
  */
+/** What the section is showing: one commit, the working tree, or the gap between two commits. */
+export type Subject =
+  | { readonly kind: 'commit'; readonly sha: string }
+  | { readonly kind: 'working' }
+  | { readonly kind: 'range'; readonly from: string; readonly to: string };
+
 export async function openFileDiff(
   repo: string,
-  sha: string | null,
+  subject: Subject,
   file: FileChange,
 ): Promise<void> {
+  if (subject.kind === 'range') {
+    // Both sides carry a blob OID, exactly as they do for one commit, so a rename across the range
+    // still diffs as one file rather than as an add beside a delete.
+    const short = (sha: string): string => sha.slice(0, 8);
+
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      revisionUri(repo, file.oldPath ?? file.path, file.oldBlob, short(subject.from)),
+      revisionUri(repo, file.path, file.newBlob, short(subject.to)),
+      `${basename(file.path)} (${short(subject.from)} → ${short(subject.to)})`,
+      { preview: true },
+    );
+
+    return;
+  }
+
+  const sha = subject.kind === 'commit' ? subject.sha : null;
+
   if (sha === null) {
     // An untracked file has no left side and a deleted one has no right side; the rest is HEAD
     // against the file itself.
@@ -231,7 +255,7 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
   private view: vscode.TreeView<Node> | null = null;
   private repo: string | null = null;
   /** The commit on show, or null when what is on show is the working tree. */
-  private sha: string | null = null;
+  private subject: Subject | null = null;
   private files: FileChange[] | null = null;
   private root: Folder = newFolder('', '');
   private asTree: boolean;
@@ -251,17 +275,26 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
 
   /** Point the section at a commit, or at nothing once the last graph closes. */
   setCommit(repo: string | null, details: CommitDetails | null): void {
-    this.show(repo, details?.sha ?? null, details?.files ?? null);
+    this.show(
+      repo,
+      details === null ? null : { kind: 'commit', sha: details.sha },
+      details?.files ?? null,
+    );
   }
 
   /** Point it at the working tree instead: changes that belong to no commit yet. */
   setWorking(repo: string, files: readonly FileStatus[]): void {
-    this.show(repo, null, workingChanges(files));
+    this.show(repo, { kind: 'working' }, workingChanges(files));
   }
 
-  private show(repo: string | null, sha: string | null, files: FileChange[] | null): void {
+  /** Point it at the gap between two commits. */
+  setComparison(repo: string, comparison: Comparison): void {
+    this.show(repo, { kind: 'range', from: comparison.from, to: comparison.to }, comparison.files);
+  }
+
+  private show(repo: string | null, subject: Subject | null, files: FileChange[] | null): void {
     this.repo = repo;
-    this.sha = sha;
+    this.subject = subject;
     this.files = files;
     this.root = files === null ? newFolder('', '') : buildTree(files);
 
@@ -337,14 +370,14 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
   }
 
   /** The repository and file a clicked node stands for, for the command that opens it. */
-  target(node: unknown): { repo: string; sha: string | null; file: FileChange } | null {
+  target(node: unknown): { repo: string; subject: Subject; file: FileChange } | null {
     const entry = node as Node | undefined;
 
-    if (entry?.kind !== 'file' || this.repo === null || this.files === null) {
+    if (entry?.kind !== 'file' || this.repo === null || this.subject === null) {
       return null;
     }
 
-    return { repo: this.repo, sha: this.sha, file: entry.file };
+    return { repo: this.repo, subject: this.subject, file: entry.file };
   }
 
   /**
@@ -364,10 +397,24 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
 
     const count = this.files.length;
     const files = count === 1 ? '1 file' : `${count} files`;
-    const what = this.sha === null ? 'working tree' : this.sha.slice(0, 8);
+    const subject = this.subject;
+
+    const what =
+      subject === null
+        ? ''
+        : subject.kind === 'working'
+          ? 'working tree'
+          : subject.kind === 'range'
+            ? `${subject.from.slice(0, 8)} → ${subject.to.slice(0, 8)}`
+            : subject.sha.slice(0, 8);
 
     this.view.description = `${what} · ${files}`;
-    this.view.message = count === 0 ? 'This commit changed no files.' : '';
+    this.view.message =
+      count > 0
+        ? ''
+        : subject?.kind === 'range'
+          ? 'These two commits have the same content.'
+          : 'This commit changed no files.';
   }
 
   /** Which of the two title-bar buttons to offer: the one for the mode you are not already in. */

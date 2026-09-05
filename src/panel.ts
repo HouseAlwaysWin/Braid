@@ -12,7 +12,8 @@ import type { RepoInfo } from './git/discovery.ts';
 import { HistoryLoader } from './git/history.ts';
 import type { CommitDetails } from './git/details.ts';
 import type { FileStatus } from './git/repoState.ts';
-import { loadCommitDetails } from './git/details.ts';
+import type { Comparison } from './git/details.ts';
+import { compareCommits, loadCommitDetails } from './git/details.ts';
 import { RepoWatcher, refSignature } from './git/watcher.ts';
 import type { Search } from './git/search.ts';
 import { filterArgs } from './git/search.ts';
@@ -58,6 +59,7 @@ let output: Logger | undefined;
 type CommitFilesSink = {
   show(repo: string, details: CommitDetails): void;
   working(repo: string, files: readonly FileStatus[]): void;
+  compared(repo: string, comparison: Comparison): void;
   clear(): void;
 };
 
@@ -393,6 +395,9 @@ export class BraidPanel {
       case 'selectUncommitted':
         commitFiles?.working(this.repo.root, this.working);
         break;
+      case 'compare':
+        await this.showComparison(message.from, message.to);
+        break;
       case 'requestMenu':
         await this.showMenu(message.target, message.x, message.y);
         break;
@@ -599,6 +604,44 @@ export class BraidPanel {
    * Hand a conflicted file to VS Code. Its merge editor opens by itself for a file with conflict
    * markers, and it is better at resolving them than anything that would fit in the graph.
    */
+  /**
+   * What two commits differ by.
+   *
+   * It shares `detailsLoading` with the single-commit path on purpose: both answer "what is
+   * selected", only one of them can be true at a time, and ctrl-clicking down a column would
+   * otherwise leave a `git diff` running for every pair passed through on the way.
+   */
+  private async showComparison(from: string, to: string): Promise<void> {
+    this.detailsLoading?.abort();
+    const controller = new AbortController();
+    this.detailsLoading = controller;
+
+    try {
+      const comparison = await compareCommits(this.git, this.repo, from, to, controller.signal);
+
+      if (!controller.signal.aborted) {
+        this.post({
+          type: 'comparison',
+          from,
+          to,
+          files: comparison.files.length,
+          onlyFrom: comparison.onlyFrom,
+          onlyTo: comparison.onlyTo,
+        });
+
+        commitFiles?.compared(this.repo.root, comparison);
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      }
+    } finally {
+      if (this.detailsLoading === controller) {
+        this.detailsLoading = null;
+      }
+    }
+  }
+
   private async openConflict(path: string): Promise<void> {
     const uri = vscode.Uri.joinPath(vscode.Uri.file(this.repo.root), path);
     await vscode.commands.executeCommand('vscode.open', uri);

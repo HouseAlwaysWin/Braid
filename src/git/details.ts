@@ -115,6 +115,57 @@ export function parseRawDiff(output: string): FileChange[] {
   return files;
 }
 
+/** What two commits differ by, and how far apart they are. */
+export interface Comparison {
+  readonly from: string;
+  readonly to: string;
+  readonly files: FileChange[];
+  /** Commits reachable from `from` but not `to`, and the other way round. */
+  readonly onlyFrom: number;
+  readonly onlyTo: number;
+}
+
+/**
+ * Compare two commits.
+ *
+ * The same `--raw` records a commit's own file list is built from, so both blob OIDs are present on
+ * every row and the diff a file opens needs nothing new to address its two sides.
+ *
+ * The counts come from the symmetric difference rather than `from..to`, because two commits picked
+ * off a graph are not always one behind the other - and "12 on one side, 3 on the other" is the
+ * honest answer to a pair that has diverged, where a single number would have to pick a side.
+ */
+export async function compareCommits(
+  git: Git,
+  repo: RepoInfo,
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<Comparison> {
+  const options = signal === undefined ? {} : { signal };
+
+  const [raw, counts] = await Promise.all([
+    git.runRead(
+      repo.root,
+      ['diff', '--format=', '-z', '--raw', '-M', '-C', from, to],
+      options,
+    ),
+    git
+      .runRead(repo.root, ['rev-list', '--left-right', '--count', `${from}...${to}`], options)
+      .catch(() => '0\t0'),
+  ]);
+
+  const [left = '0', right = '0'] = counts.trim().split(/\s+/);
+
+  return {
+    from,
+    to,
+    files: parseRawDiff(raw),
+    onlyFrom: Number(left) || 0,
+    onlyTo: Number(right) || 0,
+  };
+}
+
 export async function loadCommitDetails(
   git: Git,
   repo: RepoInfo,

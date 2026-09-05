@@ -173,6 +173,7 @@ function start(context: vscode.ExtensionContext): void {
   setCommitFiles({
     show: (repo, details) => files.setCommit(repo, details),
     working: (repo, changes) => files.setWorking(repo, changes),
+    compared: (repo, comparison) => files.setComparison(repo, comparison),
     clear: () => files.setCommit(null, null),
   });
 
@@ -297,7 +298,7 @@ function start(context: vscode.ExtensionContext): void {
       const target = files.target(node);
 
       if (target !== null) {
-        await openFileDiff(target.repo, target.sha, target.file);
+        await openFileDiff(target.repo, target.subject, target.file);
       }
     }),
 

@@ -25,6 +25,9 @@ Working:
   fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
   Files** section in Source Control, as a folded tree or a flat list
+- Ctrl-click a second commit to compare the two: the same section fills with what they differ by,
+  and the pane says how far apart they are - a count for each side, because two commits picked off a
+  graph are not always one behind the other. Escape puts it back
 - Click a file there to open it in VS Code's own diff editor, renames included
 - Search by message, author, committer, diff content (`-G`) or path, pushed down into `git log`.
   Match case, regular expression, all-words and invert are switches inside the box, each offered
@@ -68,8 +71,7 @@ Working:
 - Draggable split between the graph and the details pane, remembered across panel reloads
 
 Anything that could destroy uncommitted work names the files it would destroy before asking, and
-nothing passes `--force` by default. Still to come: comparing two commits, and following one file
-through history.
+nothing passes `--force` by default. Still to come: following one file through history.
 
 ## Where to find it
 
@@ -94,6 +96,14 @@ side effect that a commit's colour never changes once assigned.
 
 **Lanes are polylines that only turn.** A lane running straight for a thousand rows costs two
 points. Measured on a 100k-commit repository: 100,000 rows of graph, 7,998 points.
+
+**The network actions are not the ones Source Control already has.** They look like duplicates and
+are not: `git.fetchOnPull` is off by default, so the built-in pull fetches only the branch it is
+about to merge and leaves the rest of the graph as stale as it found it. Braid's fetches the whole
+remote, then re-reads the counts before deciding anything. `git.rebaseWhenSync` is off too, so a
+divergence becomes a merge commit without being mentioned; Braid asks, and says what rebase does to
+the hashes before it does it. Behind but not ahead is `merge --ff-only`, so there is no accidental
+merge commit at all. The buttons are the duplication; the behaviour is the reason.
 
 **A remote-tracking ref is a local pointer.** `origin/main` moves when something fetches and at no
 other time, so every ahead/behind count is a statement about the last fetch rather than about now.

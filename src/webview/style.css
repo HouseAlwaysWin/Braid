@@ -391,6 +391,20 @@ body.vscode-high-contrast.author-tint .row .author {
   border-color: var(--vscode-charts-yellow, #cca700);
 }
 
+/*
+ * The other end of a comparison. Marked rather than selected: only one row is selected, and this
+ * one is the second half of a question about the first, not a rival answer to it.
+ */
+.row.compared {
+  background: var(--vscode-list-inactiveSelectionBackground, rgba(127, 127, 127, 0.22));
+  box-shadow: inset 2px 0 0 var(--vscode-charts-purple, #b180d7);
+}
+
+.range-arrow {
+  color: var(--vscode-descriptionForeground);
+  padding: 0 5px;
+}
+
 .row.selected {
   background: var(--vscode-list-activeSelectionBackground, #04395e);
   color: var(--vscode-list-activeSelectionForeground, inherit);

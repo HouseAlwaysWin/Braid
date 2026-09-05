@@ -186,6 +186,15 @@ let firstParent = false;
 let headDot: GraphDot | null = null;
 
 let selected = -1;
+
+/**
+ * The second commit of a comparison, or -1 for none.
+ *
+ * `selected` stays the first one, so everything that already follows the selection - the arrow
+ * keys, the scroll, the details pane - keeps working on a row that is still selected. This is an
+ * addition to that state rather than a mode replacing it.
+ */
+let comparedTo = -1;
 const paths = new Map<number, { color: number; points: Point[] }>();
 let dots: GraphDot[] = [];
 let palette: string[] = [];
@@ -277,7 +286,7 @@ function renderRows(indent: number): void {
     }
 
     const el = document.createElement('div');
-    el.className = i === selected ? 'row selected' : 'row';
+    el.className = i === selected ? 'row selected' : i === comparedTo ? 'row compared' : 'row';
     el.style.top = `${i * rowHeight}px`;
     el.style.paddingLeft = `${indent}px`;
 
@@ -349,7 +358,16 @@ function renderRows(indent: number): void {
     sha.textContent = row.sha.slice(0, 8);
     el.append(sha);
 
-    el.addEventListener('click', () => select(i));
+    el.addEventListener('click', (event) => {
+      // Ctrl anywhere, Cmd on a Mac: the modifier VS Code itself uses for "and this one too".
+      if ((event.ctrlKey || event.metaKey) && selected >= 0 && selected !== i) {
+        compareWith(i);
+        return;
+      }
+
+      select(i);
+    });
+
     el.addEventListener('contextmenu', (event) =>
       openMenu(
         event,
@@ -378,11 +396,52 @@ function scrollRowIntoView(index: number): void {
   }
 }
 
+/**
+ * Compare the selected commit with another one.
+ *
+ * The order is the order of the two clicks - selected first, ctrl-clicked second - and the pane
+ * says so rather than leaving it to be inferred. Guessing from row position would be worse than
+ * arbitrary: two commits on different branches have no order between them, and the graph's own is
+ * only the order git happened to walk them in.
+ */
+function compareWith(index: number): void {
+  const from = view[selected];
+  const to = view[index];
+
+  if (from === undefined || to === undefined || from.uncommitted === true || to.uncommitted === true) {
+    return;
+  }
+
+  comparedTo = index;
+  vscode.postMessage({ type: 'compare', from: from.sha, to: to.sha });
+  schedule();
+}
+
+/** Back to a single commit, without asking for anything that is already on screen. */
+function clearComparison(): void {
+  if (comparedTo < 0) {
+    return;
+  }
+
+  comparedTo = -1;
+
+  const row = view[selected];
+
+  if (row !== undefined && row.uncommitted !== true) {
+    vscode.postMessage({ type: 'selectCommit', sha: row.sha });
+  }
+
+  schedule();
+}
+
 /** Move the selection, keep it on screen, and ask the host for that commit's details. */
 function select(index: number): void {
   if (index < 0 || index >= view.length) {
     return;
   }
+
+  // A new pick is a new question: whatever was being compared to is no longer part of it.
+  comparedTo = -1;
 
   if (index === selected) {
     // Clicking the row that is already selected is how you ask for the pane back after closing it.
@@ -746,6 +805,70 @@ function renderWorking(): void {
   detailBodyEl.hidden = true;
 }
 
+/**
+ * The pane for a comparison.
+ *
+ * Two counts rather than one, because two commits picked off a graph are not always one behind the
+ * other - a single "N commits" would have to pick a side, and picking the wrong one is worse than
+ * spending a line saying both.
+ */
+function renderComparison(message: {
+  from: string;
+  to: string;
+  files: number;
+  onlyFrom: number;
+  onlyTo: number;
+}): void {
+  currentDetails = null;
+  detailsEl.hidden = false;
+  splitter.hidden = false;
+  applyDetailsHeight(detailsHeight);
+
+  const meta = document.createDocumentFragment();
+  const line = (label: string, ...values: HTMLElement[]): void => {
+    const wrap = document.createElement('div');
+    const value = document.createElement('span');
+
+    value.className = 'meta-value';
+    value.append(...values);
+    wrap.append(span('meta-key', label), value);
+    meta.append(wrap);
+  };
+
+  // `.sha-full` carries a pointer cursor, so it has to actually do the thing it looks like it does.
+  const hash = (sha: string): HTMLElement => {
+    const el = span('sha-full', sha.slice(0, 8));
+
+    el.title = `${sha}
+Click to copy`;
+    el.addEventListener('click', () => vscode.postMessage({ type: 'copy', text: sha }));
+
+    return el;
+  };
+
+  line('comparing', hash(message.from), span('range-arrow', '→'), hash(message.to));
+
+  line(
+    'changed',
+    span('person', message.files === 1 ? '1 file' : `${message.files} files`),
+  );
+
+  line(
+    'apart',
+    span(
+      'when',
+      message.onlyFrom === 0 && message.onlyTo === 0
+        ? 'the same commit content on both sides'
+        : `${message.onlyFrom} commit${message.onlyFrom === 1 ? '' : 's'} only on the left, ` +
+          `${message.onlyTo} only on the right`,
+    ),
+  );
+
+  detailMetaEl.replaceChildren(meta);
+  detailBodyEl.replaceChildren();
+  detailBodyEl.hidden = true;
+}
+
 function renderDetails(details: CommitInfo): void {
   currentDetails = details;
   detailBodyEl.hidden = false;
@@ -976,6 +1099,10 @@ function applyView(): void {
   // the one row that is about now rather than about the past.
   view = working.total === 0 ? history : [uncommittedRow(), ...history];
 
+  // Row numbers are about to mean something else; a comparison pinned to the old ones would mark
+  // two rows nobody picked.
+  comparedTo = -1;
+
   selected = keepUncommitted
     ? 0
     : keep === undefined || keep === ''
@@ -1056,6 +1183,7 @@ function reset(): void {
   complete = false;
   working = { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, branch: null };
   headDot = null;
+  comparedTo = -1;
   remote = { upstream: null, branch: null, fetchedAt: null };
   upstreamEl.hidden = true;
   dots = [];
@@ -1144,6 +1272,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
 
     case 'details':
       renderDetails(message.details);
+      break;
+
+    case 'comparison':
+      renderComparison(message);
       break;
 
     case 'menu':
@@ -1594,10 +1726,16 @@ document.addEventListener('keydown', (event) => {
   const from = selected < 0 ? -1 : selected;
 
   if (event.key === 'Escape') {
-    // Innermost first: the menu, then the pane. Closing both at once would be one keystroke doing
-    // two things the user did not ask for.
+    // Innermost first: the menu, then the comparison, then the pane. Closing more than one of them
+    // at a time would be one keystroke doing something the user did not ask for.
     if (menuEl !== null) {
       closeMenu();
+      event.preventDefault();
+      return;
+    }
+
+    if (comparedTo >= 0) {
+      clearComparison();
       event.preventDefault();
       return;
     }

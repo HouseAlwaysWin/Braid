@@ -96,6 +96,18 @@ export type HostMessage =
   /** Every filter has been dropped at once; put the boxes back without asking for another walk. */
   | { readonly type: 'filtersCleared' }
   | { readonly type: 'details'; readonly details: CommitInfo }
+  /**
+   * The result of comparing two commits. The files went to Source Control; what comes back here is
+   * only what the pane needs to describe the range.
+   */
+  | {
+      readonly type: 'comparison';
+      readonly from: string;
+      readonly to: string;
+      readonly files: number;
+      readonly onlyFrom: number;
+      readonly onlyTo: number;
+    }
   /** The repository changed under us and the graph has been reloaded from scratch. */
   | { readonly type: 'reloading'; readonly reason: string }
   | {
@@ -145,6 +157,8 @@ export type WebviewMessage =
   | { readonly type: 'selectCommit'; readonly sha: string }
   /** The working-tree row was picked. It has no commit to load, only files to list. */
   | { readonly type: 'selectUncommitted' }
+  /** Two commits were picked. What they differ by is a range, not either one of them. */
+  | { readonly type: 'compare'; readonly from: string; readonly to: string }
   | { readonly type: 'copy'; readonly text: string }
   /** Right-click: the host decides what is on the menu, because availability depends on repo state. */
   | { readonly type: 'requestMenu'; readonly target: Target; readonly x: number; readonly y: number }

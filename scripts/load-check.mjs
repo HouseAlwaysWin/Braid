@@ -1292,6 +1292,96 @@ if (watchTest) {
 }
 
 /*
+ * Comparing two commits, end to end: two shas -> `git diff --raw` -> a file list with a blob on
+ * both sides -> a diff addressed by those blobs. The counts come from the symmetric difference, so
+ * a pair that has diverged gets a number for each side rather than one that has to pick a side.
+ */
+{
+  const rows = posted.filter((m) => m.type === 'page').flatMap((m) => m.rows);
+  const newest = rows[0];
+  const oldest = rows[rows.length - 1];
+
+  if (newest === undefined || oldest === undefined || newest.sha === oldest.sha) {
+    problems.push('not enough commits to compare');
+  } else {
+    const before = posted.filter((m) => m.type === 'comparison').length;
+    messageHandler({ type: 'compare', from: oldest.sha, to: newest.sha });
+
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && posted.filter((m) => m.type === 'comparison').length === before) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const comparison = posted.filter((m) => m.type === 'comparison').pop();
+
+    console.log(
+      '\ncompare        :',
+      comparison === undefined
+        ? 'NO ANSWER'
+        : `${comparison.from.slice(0, 8)} → ${comparison.to.slice(0, 8)} | ${comparison.files} files | ${comparison.onlyFrom} left, ${comparison.onlyTo} right`,
+    );
+
+    if (comparison === undefined) {
+      problems.push('comparing two commits produced nothing');
+    } else {
+      if (comparison.files === 0) {
+        problems.push('comparing the first and last commit found no changed files');
+      }
+
+      // The root is an ancestor of the tip, so everything is on one side and nothing on the other.
+      if (comparison.onlyFrom !== 0 || comparison.onlyTo === 0) {
+        problems.push(
+          `an ancestor compared to its descendant came back ${comparison.onlyFrom} left and ${comparison.onlyTo} right`,
+        );
+      }
+
+      const provider = treeProviders.get('braid.files');
+      const nodes = [];
+      const walk = (list) => {
+        for (const node of list) {
+          if (node.kind === 'file') {
+            nodes.push(node);
+          } else {
+            walk(provider.getChildren(node));
+          }
+        }
+      };
+
+      walk(provider.getChildren());
+
+      console.log('  section says :', treeViews.get('braid.files')?.description ?? 'NO DESCRIPTION');
+
+      if (nodes.length !== comparison.files) {
+        problems.push(`the section listed ${nodes.length} files, the comparison found ${comparison.files}`);
+      }
+
+      // A file opened from a range diffs blob against blob, not against the working tree.
+      diffsOpened.length = 0;
+      await commands.get('braid.openCommitFile')(nodes[0]);
+
+      const opened = diffsOpened[0];
+
+      if (opened === undefined) {
+        problems.push('opening a file from a comparison produced no diff');
+      } else {
+        console.log('  diff         :', opened.title);
+
+        if (!opened.title.includes('→')) {
+          problems.push(`a comparison diff is titled ${opened.title}`);
+        }
+
+        const contents = contentProviders.get('braid-git');
+        const right = await contents.provideTextDocumentContent(opened.right);
+
+        if (right.length === 0 && nodes[0].file.newBlob !== null) {
+          problems.push('the newer side of a comparison diff came back empty');
+        }
+      }
+    }
+  }
+}
+
+/*
  * The working tree's own row - the one row in the graph that is not a commit, and so the one that
  * takes a path nothing else here exercises: `git status` -> a `working` message -> a file list with
  * no blob OIDs on either side -> a diff whose right-hand side is the file on disk.
