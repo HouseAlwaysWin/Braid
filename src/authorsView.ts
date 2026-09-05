@@ -108,15 +108,23 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
     });
   }
 
-  showAll(): void {
+  /** Clear the selection and repaint. Announcing it is the caller's, so a bulk clear reloads once. */
+  reset(): boolean {
     if (this.selected.size === 0) {
-      return;
+      return false;
     }
 
     this.selected.clear();
     this.changed.fire(undefined);
     this.updateMessage();
-    this.filterChanged.fire();
+
+    return true;
+  }
+
+  showAll(): void {
+    if (this.reset()) {
+      this.filterChanged.fire();
+    }
   }
 
   private updateMessage(): void {

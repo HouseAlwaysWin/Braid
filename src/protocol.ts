@@ -14,7 +14,17 @@ import type { GraphDelta } from './graph/layout.ts';
 import type { GitRef } from './git/logParser.ts';
 import type { CommitDetails } from './git/details.ts';
 import type { Search } from './git/search.ts';
+import type { DateRange } from './git/dates.ts';
 import type { MenuItem, Target } from './actions/registry.ts';
+
+/**
+ * A commit's identity and message.
+ *
+ * Without its files: those go to the Commit Files section in Source Control, not through here. It
+ * saves a structured clone of every changed file on every arrow-key press through the history, and
+ * the view has nothing to do with them.
+ */
+export type CommitInfo = Omit<CommitDetails, 'files'>;
 
 /** One commit as the webview needs it - the extension's richer `Commit` is not sent wholesale. */
 export interface Row {
@@ -26,6 +36,14 @@ export interface Row {
   readonly isHead: boolean;
   /** `stash@{0}` when this row is a stash rather than a commit. */
   readonly stash?: string;
+  /**
+   * True for the one row that is not a commit at all: the working tree.
+   *
+   * The view builds it rather than the host sending it, because it is not part of the history and
+   * must not be part of the layout - the lanes are indexed by commit, and a row that comes and goes
+   * as files are saved would renumber every one of them.
+   */
+  readonly uncommitted?: boolean;
 }
 
 export type HostMessage =
@@ -45,8 +63,25 @@ export type HostMessage =
       readonly delta: GraphDelta;
     }
   | { readonly type: 'done'; readonly total: number; readonly elapsedMs: number }
-  | { readonly type: 'reset' }
-  | { readonly type: 'details'; readonly details: CommitDetails }
+  /**
+   * What is in the working tree, sent on every reload. Zero files means there is nothing to show a
+   * row for, which is the ordinary state of a repository nobody is in the middle of editing.
+   */
+  | {
+      readonly type: 'working';
+      readonly total: number;
+      readonly staged: number;
+      readonly unstaged: number;
+      readonly untracked: number;
+      readonly conflicted: number;
+      /** The branch the changes would land on, or null when HEAD is detached. */
+      readonly branch: string | null;
+    }
+  /** A fresh load is starting. `filtered` is whether anything is narrowing it, from any source. */
+  | { readonly type: 'reset'; readonly filtered: boolean }
+  /** Every filter has been dropped at once; put the boxes back without asking for another walk. */
+  | { readonly type: 'filtersCleared' }
+  | { readonly type: 'details'; readonly details: CommitInfo }
   /** The repository changed under us and the graph has been reloaded from scratch. */
   | { readonly type: 'reloading'; readonly reason: string }
   | {
@@ -73,12 +108,26 @@ export type HostMessage =
   | { readonly type: 'error'; readonly message: string };
 
 export type WebviewMessage =
-  | { readonly type: 'ready' }
+  /*
+   * The panel is built with `retainContextWhenHidden: false`, so hiding the tab destroys the view
+   * and showing it again builds a fresh one - while the host still holds the filters the old one
+   * set. The restored filters travel with the handshake so the two cannot disagree: whatever the
+   * boxes say after a reload is what the graph was walked with.
+   */
+  | {
+      readonly type: 'ready';
+      readonly search: Search | null;
+      readonly dates: DateRange | null;
+    }
   | { readonly type: 'refresh' }
+  /** Drop the search, the date range, and the sidebar's ref and author filters, all at once. */
+  | { readonly type: 'clearFilters' }
   | { readonly type: 'search'; readonly search: Search | null }
+  /** Narrow the walk to a stretch of time. Separate from the search: the two combine. */
+  | { readonly type: 'dates'; readonly range: DateRange | null }
   | { readonly type: 'selectCommit'; readonly sha: string }
-  /** Open one of the selected commit's files in VS Code's diff editor. */
-  | { readonly type: 'openDiff'; readonly sha: string; readonly index: number }
+  /** The working-tree row was picked. It has no commit to load, only files to list. */
+  | { readonly type: 'selectUncommitted' }
   | { readonly type: 'copy'; readonly text: string }
   /** Right-click: the host decides what is on the menu, because availability depends on repo state. */
   | { readonly type: 'requestMenu'; readonly target: Target; readonly x: number; readonly y: number }

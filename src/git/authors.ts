@@ -9,6 +9,7 @@
  */
 
 import type { Git } from './exec.ts';
+import { escapeBasicRegex } from './search.ts';
 import type { RepoInfo } from './discovery.ts';
 
 export interface Author {
@@ -51,8 +52,9 @@ export async function listAuthors(git: Git, repo: RepoInfo): Promise<Author[]> {
  * people or nobody at all.
  *
  * Escaping here rather than passing `--fixed-strings` is deliberate: that flag would also apply to
- * the user's message search, quietly changing what their own query means.
+ * the user's message search, quietly changing what their own query means. The escape itself is
+ * the search box's, because the dialect is git's and there is only one of it.
  */
 export function authorArgs(names: readonly string[]): string[] {
-  return names.map((name) => `--author=${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+  return names.map((name) => `--author=${escapeBasicRegex(name)}`);
 }

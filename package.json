@@ -68,6 +68,29 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "braid.clearFilters",
+        "title": "Clear All Filters",
+        "category": "Braid",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "braid.filesAsTree",
+        "title": "View Changed Files as Tree",
+        "category": "Braid",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "braid.filesAsList",
+        "title": "View Changed Files as List",
+        "category": "Braid",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "braid.openCommitFile",
+        "title": "Open Changes",
+        "category": "Braid"
+      },
+      {
         "command": "braid.fetch",
         "title": "Fetch",
         "category": "Braid",
@@ -100,6 +123,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "braid.openCommitFile",
+          "when": "false"
+        },
         {
           "command": "braid.refresh",
           "when": "braid.graphVisible"
@@ -162,6 +189,16 @@
           "command": "braid.showAllAuthors",
           "when": "view == braid.authors",
           "group": "navigation@1"
+        },
+        {
+          "command": "braid.filesAsList",
+          "when": "view == braid.files && braid.filesAsTree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "braid.filesAsTree",
+          "when": "view == braid.files && !braid.filesAsTree",
+          "group": "navigation@1"
         }
       ]
     },
@@ -215,26 +252,31 @@
         }
       }
     },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "braid",
-          "title": "Braid",
-          "icon": "media/braid.svg"
-        }
-      ]
-    },
     "views": {
-      "braid": [
+      "scm": [
+        {
+          "id": "braid.files",
+          "name": "Commit Files",
+          "icon": "media/braid.svg",
+          "contextualTitle": "Braid",
+          "visibility": "collapsed",
+          "when": "braid.hasRepository"
+        },
         {
           "id": "braid.refs",
           "name": "Branches & Tags",
-          "icon": "media/braid.svg"
+          "icon": "media/braid.svg",
+          "contextualTitle": "Braid",
+          "visibility": "collapsed",
+          "when": "braid.hasRepository"
         },
         {
           "id": "braid.authors",
           "name": "Authors",
-          "icon": "media/braid.svg"
+          "icon": "media/braid.svg",
+          "contextualTitle": "Braid",
+          "visibility": "collapsed",
+          "when": "braid.hasRepository"
         }
       ]
     }
@@ -243,7 +285,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/load-check.mjs --watch",
+    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/load-check.mjs --watch && node scripts/load-check.mjs --break-view=braid.files",
     "vscode:prepublish": "node esbuild.mjs --production",
     "smoke": "node scripts/smoke.mjs",
     "load-check": "node scripts/load-check.mjs",

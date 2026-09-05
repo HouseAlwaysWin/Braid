@@ -15,9 +15,24 @@ Working:
 - Ordinary clones, bare repositories, linked worktrees and submodules
 - Streaming load: the first rows paint while git is still walking
 - Virtualized rendering: a 20,000-row history keeps 31 row elements in the DOM
-- Click or arrow-key a commit for its message, metadata and changed files
-- Double-click a file to open it in VS Code's own diff editor, renames included
-- Search by message, author, diff content (`-G`) or path, pushed down into `git log`
+- A row for the working tree when there is one, above the history and hanging off HEAD by a dashed
+  line, with what is staged, unstaged and untracked. Click it and the same **Commit Files** section
+  lists them; click a file and the diff is HEAD against the file as it is on disk
+- Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
+  Files** section in Source Control, as a folded tree or a flat list
+- Click a file there to open it in VS Code's own diff editor, renames included
+- Search by message, author, committer, diff content (`-G`) or path, pushed down into `git log`.
+  Match case, regular expression, all-words and invert are switches inside the box, each offered
+  only in the modes where git can honour it - and text is the default, so `v0.4.1` no longer
+  quietly also matches `v0X4Y1`. Paste a hash instead and it selects that commit rather than
+  grepping for it, and whatever matched is marked in the row
+- A date filter beside the search: today, the last 7, 30 or 365 days, or a custom range. It narrows
+  the walk like every other filter here, and combines with them - "what did Ada touch today" is one
+  question. It compares git's committer date rather than the author date the column shows, which is
+  the same thing except for rewritten history
+- One button drops every filter at once - the search, the date range, and the branch and author
+  ticks in Source Control - and it is on screen only while there is something to drop. The sort is
+  left alone: it hides nothing, and it has a way back of its own
 - Auto-refresh: commit from a terminal and the graph reloads itself
 - Right-click to act: checkout (branch, remote branch, or a commit detached), create and rename
   branches, create lightweight or annotated tags, delete branches and tags
@@ -25,15 +40,18 @@ Working:
   conflicted files as links into VS Code's merge editor
 - Cherry-pick, revert, and reset (soft, mixed or hard) from any commit
 - Stashes appear in the graph, with apply, pop and drop on the row and a Stash Changes command
-- Two sidebar filters: untick branches, remotes or tags to keep them out of the walk, and tick
-  authors to show only theirs. Both narrow what `git log` walks rather than hiding rows
+- Column headers, and a click on one sorts by description, author, date or commit. A sorted list is
+  flat: a lane's Y coordinate is a row index, so in any order but git's the lines would join commits
+  that are no longer neighbours. A third click puts the graph back
+- Two filters in the Source Control sidebar: untick branches, remotes or tags to keep them out of
+  the walk, and tick authors to show only theirs. Both narrow what `git log` walks rather than
+  hiding rows
 - A text filter for the branch list itself, for repositories with more refs than fit on screen
 - Each author gets their own colour, derived from the name so it never shifts as pages stream in
 - Fetch, pull and push, using whatever credential helper is already set up - Braid never asks for
   a password and never stores one. Pull asks whether to merge or rebase only when the histories
   have actually diverged, and force push is `--force-with-lease` after a fetch, never `--force`
-- Draggable split between the graph and the details pane, and a tree/flat toggle for the
-  changed-file list - both remembered across panel reloads
+- Draggable split between the graph and the details pane, remembered across panel reloads
 
 Anything that could destroy uncommitted work names the files it would destroy before asking, and
 nothing passes `--force` by default. Still to come: comparing two commits, and following one file
@@ -47,9 +65,11 @@ The graph opens as an editor tab. Three ways in:
 - The branch icon in the **Source Control** title bar
 - **Braid: Open Git Graph** in the command palette
 
-The Activity Bar icon opens the **Branches & Tags** sidebar rather than the graph - VS Code puts
-view containers there, not commands. Unticking a ref there narrows what `git log` walks, so a
-repository carrying two hundred `origin/dependabot/*` branches stops paying for them.
+Braid has no Activity Bar icon of its own. Its three sections - **Commit Files**, **Branches &
+Tags** and **Authors** - live in **Source Control**, under the changes list: collapsed until you
+want them, and absent altogether in a workspace with no repository. Unticking a ref there narrows
+what `git log` walks, so a repository carrying two hundred `origin/dependabot/*` branches stops
+paying for them.
 
 ## Design notes
 
@@ -61,8 +81,37 @@ side effect that a commit's colour never changes once assigned.
 **Lanes are polylines that only turn.** A lane running straight for a thousand rows costs two
 points. Measured on a 100k-commit repository: 100,000 rows of graph, 7,998 points.
 
+**The working tree is a row, not a commit.** It is built in the view rather than sent by the host,
+and deliberately kept out of the lane layout: a lane point's Y *is* a commit's row index, so a row
+that appears and disappears as files are saved would renumber every one of them and force a
+re-layout of the whole history. Instead it takes display position zero and the canvas shifts down
+by one - one number, no re-layout, and a dashed line to say that nothing up there is reachable yet.
+
+**The pane is for the commit, the sidebar is for its files.** The details pane is wide and short;
+a file list is narrow and tall. Ten files in a 200px strip under a 20,000-row history was the wrong
+shape for both, so the list is a tree view now - which also means folding, status colours and
+one-click opening come from VS Code rather than from three hundred lines of webview.
+
+**git's date flags need spelling out.** A bare `--since=2026-07-24` is not midnight: approxidate
+fills the unspecified fields from the current clock, so run at 20:08 it means that evening - and
+answers differently an hour later. Measured, it returned one commit from a day that held twelve.
+`--until=<day>` likewise means *before* that day. Both bounds are sent with an explicit time, and
+the lower one as `--since-as-filter` where git is new enough (2.37): plain `--since` stops walking
+at the first commit older than the cutoff, which hides newer commits behind an older one in a
+history whose dates are not monotonic. That gives up the early exit, which streaming makes
+affordable - rows still appear as they are found.
+
+**git's regexes are basic ones, not the ones you think in.** `--grep`, `--author` and `-G` are
+POSIX *basic* regular expressions, where `+ ? ( ) { } |` are literal until you escape them - `\+`
+is the one-or-more operator. Escaping a name the JavaScript way turns `C++` into a pattern meaning
+something else and `A|B` into two different people, so the escape is one named function with the
+dialect written down beside it. `--fixed-strings` would do the job, and is not used: it is a global
+flag, so it would also reach the `--author` arguments the Authors sidebar contributes.
+
 **Y is measured in rows, not pixels.** A point at `y` is drawn at `y * rowHeight - scrollTop`, so
-the canvas stays locked to the row text and changing the row height needs no re-layout.
+the canvas stays locked to the row text and changing the row height needs no re-layout. It is also
+why sorting hides the graph rather than redrawing it: reorder the rows and the text slides out from
+under lines that are still where the layout put them.
 
 **One streaming `git log`, not paged calls.** Paging with `--skip=N` makes git re-walk N commits per
 page, which is quadratic across a full scroll; separate calls can also straddle a ref update and

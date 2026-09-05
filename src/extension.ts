@@ -3,10 +3,11 @@ import * as vscode from 'vscode';
 import { Git } from './git/exec.ts';
 import type { RepoInfo } from './git/discovery.ts';
 import { discover } from './git/discovery.ts';
-import { BraidPanel, setPanelLogger } from './panel.ts';
+import { BraidPanel, setCommitFiles, setPanelLogger } from './panel.ts';
 import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
 import { RefsProvider } from './refsView.ts';
 import { AuthorsProvider } from './authorsView.ts';
+import { FilesProvider, openFileDiff } from './filesView.ts';
 
 let output: vscode.LogOutputChannel | undefined;
 
@@ -61,6 +62,49 @@ async function findRepository(git: Git): Promise<RepoInfo | null> {
   return null;
 }
 
+/**
+ * Call `onChange` when the built-in git extension opens or closes a repository.
+ *
+ * Braid's own discovery is a filesystem walk with nothing to subscribe to, so a repository that
+ * appears after startup - a `git init`, or a clone into a folder that is already open - would
+ * otherwise stay invisible until the window is reloaded, and the Source Control sections with it.
+ *
+ * As in candidateFolders, this API is convenience rather than load-bearing: a git extension that is
+ * disabled or has moved its API costs one trigger, not the feature.
+ */
+function watchGitRepositories(onChange: () => void): { dispose(): void } {
+  const subscriptions: { dispose(): void }[] = [];
+
+  void (async () => {
+    try {
+      const extension = vscode.extensions.getExtension<{
+        getAPI(version: number): {
+          onDidOpenRepository: vscode.Event<unknown>;
+          onDidCloseRepository: vscode.Event<unknown>;
+        };
+      }>('vscode.git');
+
+      if (extension === undefined) {
+        return;
+      }
+
+      const api = (extension.isActive ? extension.exports : await extension.activate()).getAPI(1);
+
+      subscriptions.push(api.onDidOpenRepository(onChange), api.onDidCloseRepository(onChange));
+    } catch {
+      // Nothing to unsubscribe from, and nothing else here depends on it.
+    }
+  })();
+
+  return {
+    dispose() {
+      for (const subscription of subscriptions) {
+        subscription.dispose();
+      }
+    },
+  };
+}
+
 /** Run an action that targets the repository, which needs a graph to run against. */
 function repoAction(id: string): void {
   const panel = BraidPanel.active();
@@ -78,6 +122,36 @@ export function activate(context: vscode.ExtensionContext): void {
   setPanelLogger(output);
   context.subscriptions.push(output);
 
+  try {
+    start(context);
+  } catch (err) {
+    /*
+     * Activation is all or nothing, and its failure is silent by default.
+     *
+     * Everything Braid contributes hangs off the end of `start`: the commands are registered there,
+     * and the three Source Control sections are gated on a context key it sets. An exception
+     * anywhere in it therefore does not lose one feature, it loses all of them - and VS Code says
+     * nothing beyond a line in a log nobody has open.
+     *
+     * The way this is reached in development is a window whose manifest is older than its code:
+     * `createTreeView` throws for a view the running window has never heard of, which is what
+     * happens after a new view is added and the Extension Development Host is not restarted.
+     */
+    const message = err instanceof Error ? err.message : String(err);
+
+    output.error(`Braid failed to activate: ${message}`);
+
+    void vscode.window
+      .showErrorMessage(`Braid failed to activate: ${message}`, 'Show Log')
+      .then((choice) => {
+        if (choice === 'Show Log') {
+          output?.show();
+        }
+      });
+  }
+}
+
+function start(context: vscode.ExtensionContext): void {
   const config = vscode.workspace.getConfiguration('braid');
 
   const git = new Git({
@@ -102,15 +176,35 @@ export function activate(context: vscode.ExtensionContext): void {
   const authors = new AuthorsProvider(git);
   const authorsView = vscode.window.createTreeView('braid.authors', { treeDataProvider: authors });
 
+  /*
+   * The selected commit's files. `globalState` rather than the workspace's, because tree-or-flat is
+   * how someone likes to read a file list, not something about this repository.
+   */
+  const files = new FilesProvider(context.globalState);
+  const filesView = vscode.window.createTreeView('braid.files', { treeDataProvider: files });
+
+  files.attach(filesView);
+  setCommitFiles({
+    show: (repo, details) => files.setCommit(repo, details),
+    working: (repo, changes) => files.setWorking(repo, changes),
+    clear: () => files.setCommit(null, null),
+  });
+
   // Read fresh on every reload, so neither view has to push anything at the panel.
   const filters = {
     refs: () => refs.visibleRefs(),
     authorArgs: () => authors.filterArgs(),
+    // `reset` rather than `showAll`: neither view asks for a reload, because the panel is about to.
+    clear: () => {
+      refs.reset();
+      authors.reset();
+    },
   };
 
   context.subscriptions.push(
     refsView,
     authorsView,
+    filesView,
     refs.attach(refsView),
     authors.attach(authorsView),
 
@@ -148,6 +242,38 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('braid.showAllRefs', () => refs.showAll()),
 
     vscode.commands.registerCommand('braid.showAllAuthors', () => authors.showAll()),
+
+    /*
+     * One gesture for every filter there is, wherever it was set - the two sidebar views and the
+     * graph's own search and date range. With no graph open there is nothing to reload, so the two
+     * views clear themselves the ordinary way.
+     */
+    vscode.commands.registerCommand('braid.clearFilters', () => {
+      const panel = BraidPanel.active();
+
+      if (panel === null) {
+        refs.showAll();
+        authors.showAll();
+        return;
+      }
+
+      return panel.clearFilters();
+    }),
+
+    vscode.commands.registerCommand('braid.filesAsTree', () => files.setAsTree(true)),
+    vscode.commands.registerCommand('braid.filesAsList', () => files.setAsTree(false)),
+
+    /*
+     * Clicking a file opens its diff. The node arrives from the tree item rather than an index into
+     * a list, so there is no way for the two to drift out of step with each other.
+     */
+    vscode.commands.registerCommand('braid.openCommitFile', async (node: unknown) => {
+      const target = files.target(node);
+
+      if (target !== null) {
+        await openFileDiff(target.repo, target.sha, target.file);
+      }
+    }),
 
     /*
      * A tree view cannot host a text field, so the query is typed into one of VS Code's own inputs.
@@ -222,9 +348,9 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   /*
-   * One click to the graph itself. The Activity Bar icon opens the refs sidebar rather than the
-   * graph - VS Code puts view containers there, not commands - so the status bar is what gets you
-   * straight to the thing you came for.
+   * One click to the graph itself. Braid's two views sit in Source Control, and a view container
+   * opens views rather than running commands, so the status bar is what gets you straight to the
+   * thing you came for.
    *
    * It is hidden in workspaces with no repository, because an entry point to something that cannot
    * open is worse than no entry point.
@@ -241,38 +367,80 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar.command = 'braid.openGraph';
   context.subscriptions.push(statusBar);
 
-  const updateStatusBar = async (): Promise<void> => {
+  /*
+   * Does this workspace have a repository at all?
+   *
+   * Two things hang off the answer: the status bar entry, and whether Braid's two views appear in
+   * Source Control. A workspace with nothing to graph should not carry two collapsed sections under
+   * someone else's changes list - Braid is a guest in that container now, not the owner of its own.
+   */
+  const updatePresence = async (): Promise<void> => {
+    const repo = await findRepository(git);
+
+    await vscode.commands.executeCommand('setContext', 'braid.hasRepository', repo !== null);
+
     const enabled = vscode.workspace
       .getConfiguration('braid')
       .get<boolean>('statusBar.enabled', true);
 
-    if (!enabled || (await findRepository(git)) === null) {
+    if (repo === null || !enabled) {
       statusBar.hide();
-      return;
+    } else {
+      statusBar.show();
     }
 
-    statusBar.show();
+    /*
+     * Populate the views here rather than waiting for the graph, so a section that has only just
+     * appeared - after a `git init`, say - is not an empty room when it is first expanded.
+     *
+     * A graph that is already open owns them: the panel draws itself through their filters, so
+     * re-pointing them at another repository underneath it would filter a history by refs it has
+     * never heard of.
+     */
+    if (BraidPanel.active() === null) {
+      authors.setRepository(repo);
+      await refs.setRepository(repo);
+    }
+  };
+
+  /*
+   * The git extension announces repositories one at a time, so a window opened on four of them
+   * would otherwise pay for four discovery passes in a row to arrive at the same answer.
+   */
+  let pending: NodeJS.Timeout | null = null;
+
+  const schedulePresenceUpdate = (): void => {
+    if (pending !== null) {
+      clearTimeout(pending);
+    }
+
+    pending = setTimeout(() => {
+      pending = null;
+      void updatePresence();
+    }, 200);
   };
 
   context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders(() => void updateStatusBar()),
+    vscode.workspace.onDidChangeWorkspaceFolders(schedulePresenceUpdate),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('braid.statusBar.enabled')) {
-        void updateStatusBar();
+        schedulePresenceUpdate();
       }
     }),
+    watchGitRepositories(schedulePresenceUpdate),
+    {
+      dispose() {
+        if (pending !== null) {
+          clearTimeout(pending);
+          pending = null;
+        }
+      },
+    },
   );
 
-  void updateStatusBar();
+  void updatePresence();
 
-  // Populate the sidebar before the graph is ever opened, so clicking the Activity Bar icon does
-  // not land on an empty room.
-  void findRepository(git).then((repo) => {
-    authors.setRepository(repo);
-    return refs.setRepository(repo);
-  });
-
-  output.info('Braid activated');
+  output?.info('Braid activated');
 }
 
 export function deactivate(): void {

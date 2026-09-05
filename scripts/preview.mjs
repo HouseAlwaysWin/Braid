@@ -15,6 +15,7 @@ import { discover } from '../src/git/discovery.ts';
 import { HistoryLoader } from '../src/git/history.ts';
 import { BODY_MARKUP } from '../src/webview/markup.ts';
 import { loadCommitDetails } from '../src/git/details.ts';
+import { readRepoState } from '../src/git/repoState.ts';
 
 const repoPath = process.argv[2] ?? 'D:/DotNetProjects/GitFlick';
 const light = process.argv.includes('--light');
@@ -51,6 +52,20 @@ await loader.load(
   { batchSize: 500, maxCommits },
 );
 
+// The working tree, read for real: the row that stands for it is only worth looking at against a
+// repository that actually has uncommitted changes in it.
+const state = await readRepoState(git, repo);
+
+messages.push({
+  type: 'working',
+  total: state.files.length,
+  staged: state.files.filter((f) => f.staged).length,
+  unstaged: state.files.filter((f) => f.unstaged).length,
+  untracked: state.files.filter((f) => f.untracked).length,
+  conflicted: state.files.filter((f) => f.conflicted).length,
+  branch: state.branch,
+});
+
 messages.push({ type: 'done', total: loader.rowCount, elapsedMs: 0 });
 
 // A stand-in for a stopped merge, so the in-progress banner is something that can be looked at.
@@ -69,20 +84,13 @@ if (process.argv.includes('--conflict')) {
 }
 
 // Replay a selection too, so the details pane is part of what gets looked at rather than something
-// only ever seen inside VS Code.
-// Pick the busiest of the first few commits, so the file tree has something to be a tree about.
-const candidates = (messages.find((m) => m.type === 'page')?.rows ?? []).slice(0, 12);
-let chosen = null;
+// only ever seen inside VS Code. Its file list moved to the Source Control sidebar, which is not
+// something this harness can render, so any commit with a message will do.
+const sample = messages.find((m) => m.type === 'page')?.rows?.[0];
 
-for (const row of candidates) {
-  const details = await loadCommitDetails(git, repo, row.sha);
-  if (chosen === null || details.files.length > chosen.files.length) {
-    chosen = details;
-  }
-}
-
-if (chosen !== null) {
-  messages.push({ type: 'details', details: chosen });
+if (sample !== undefined) {
+  const { files: _files, ...info } = await loadCommitDetails(git, repo, sample.sha);
+  messages.push({ type: 'details', details: info });
 }
 
 /*
@@ -106,6 +114,10 @@ const dark = {
   '--vscode-input-background': '#313131',
   '--vscode-input-foreground': '#cccccc',
   '--vscode-input-border': '#3c3c3c',
+  '--vscode-inputOption-activeBackground': 'rgba(36, 137, 219, 0.35)',
+  '--vscode-inputOption-activeBorder': '#2488db',
+  '--vscode-inputOption-activeForeground': '#ffffff',
+  '--vscode-editor-findMatchHighlightBackground': 'rgba(234, 92, 0, 0.33)',
   '--vscode-textCodeBlock-background': '#2b2b2b',
   '--vscode-textLink-foreground': '#4daafc',
   '--vscode-charts-blue': '#3794ff',
@@ -133,6 +145,10 @@ const lightTheme = {
   '--vscode-input-background': '#ffffff',
   '--vscode-input-foreground': '#3b3b3b',
   '--vscode-input-border': '#cecece',
+  '--vscode-inputOption-activeBackground': 'rgba(0, 122, 204, 0.2)',
+  '--vscode-inputOption-activeBorder': '#005fb8',
+  '--vscode-inputOption-activeForeground': '#000000',
+  '--vscode-editor-findMatchHighlightBackground': 'rgba(234, 92, 0, 0.33)',
   '--vscode-textCodeBlock-background': '#f3f3f3',
   '--vscode-textLink-foreground': '#005fb8',
   '--vscode-charts-blue': '#1a85ff',
@@ -193,8 +209,10 @@ ${BODY_MARKUP}
         }, '*');
       }
     },
-    getState: () => undefined,
-    setState: () => {},
+    // A real store rather than a stub: the view's layout and filters are supposed to survive the
+    // tab being hidden, and a getState that always answers undefined would hide it if they did not.
+    getState: () => { try { return JSON.parse(sessionStorage.getItem('braid.state') ?? 'null') ?? undefined; } catch { return undefined; } },
+    setState: (v) => { try { sessionStorage.setItem('braid.state', JSON.stringify(v)); } catch {} },
   });
   const MESSAGES = ${JSON.stringify(messages)};
   const INIT = ${JSON.stringify({
@@ -207,6 +225,9 @@ ${BODY_MARKUP}
   })};
   function replay() {
     window.postMessage(INIT, '*');
+    // The panel always opens a load with a reset; replaying without one would hide anything the
+    // view only learns from it.
+    window.postMessage({ type: 'reset', filtered: false }, '*');
     for (const m of MESSAGES) window.postMessage(m, '*');
   }
 </script>

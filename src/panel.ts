@@ -11,11 +11,13 @@ import type { Git } from './git/exec.ts';
 import type { RepoInfo } from './git/discovery.ts';
 import { HistoryLoader } from './git/history.ts';
 import type { CommitDetails } from './git/details.ts';
+import type { FileStatus } from './git/repoState.ts';
 import { loadCommitDetails } from './git/details.ts';
-import { revisionUri } from './contentProvider.ts';
 import { RepoWatcher, refSignature } from './git/watcher.ts';
 import type { Search } from './git/search.ts';
-import { searchArgs } from './git/search.ts';
+import { filterArgs } from './git/search.ts';
+import type { DateRange } from './git/dates.ts';
+import { dateArgs } from './git/dates.ts';
 import type { HostMessage, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
 
@@ -26,6 +28,11 @@ import { BODY_MARKUP } from './webview/markup.ts';
 export interface FilterSource {
   refs(): string[] | null;
   authorArgs(): string[];
+  /**
+   * Drop everything the sidebar is narrowing by, without announcing it. The caller reloads once,
+   * rather than each view asking for a reload of its own on the way past.
+   */
+  clear(): void;
 }
 import { RepoLock } from './git/lock.ts';
 import { describeOperation, readRepoState } from './git/repoState.ts';
@@ -38,6 +45,25 @@ import { buildMenu, confirmIfNeeded, findAction } from './actions/registry.ts';
 type Logger = { warn(message: string): void; show(): void };
 
 let output: Logger | undefined;
+
+/**
+ * Where a selected commit's file list goes: the Commit Files section in Source Control.
+ *
+ * A module-level sink rather than something threaded through every panel, for the same reason the
+ * logger is one - there is exactly one of it, and which panel you clicked in is not information the
+ * section wants. It shows the last commit anyone selected, and empties when the last graph closes.
+ */
+type CommitFilesSink = {
+  show(repo: string, details: CommitDetails): void;
+  working(repo: string, files: readonly FileStatus[]): void;
+  clear(): void;
+};
+
+let commitFiles: CommitFilesSink | undefined;
+
+export function setCommitFiles(sink: CommitFilesSink): void {
+  commitFiles = sink;
+}
 
 export function setPanelLogger(logger: Logger): void {
   output = logger;
@@ -98,13 +124,17 @@ export class BraidPanel {
   private readonly disposables: vscode.Disposable[] = [];
   private loading: AbortController | null = null;
   private detailsLoading: AbortController | null = null;
-  /** The last commit whose details were loaded, so opening a diff needs no second `git show`. */
-  private details: CommitDetails | null = null;
   private readonly watcher: RepoWatcher;
   /** Fingerprint of the refs the last load was built from, to tell a real change from churn. */
   private signature: string | null = null;
   private signaturePromise: Promise<string | null> | null = null;
   private search: Search | null = null;
+  private dates: DateRange | null = null;
+  /**
+   * The working tree as of the last reload, so picking its row lists the files without a second
+   * `git status` - the state was read a moment ago for the in-progress banner anyway.
+   */
+  private working: FileStatus[] = [];
   private readonly filters: FilterSource;
 
   private readonly ui: ActionUi = {
@@ -286,13 +316,24 @@ export class BraidPanel {
   private async onMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
       case 'ready':
+        // The view is the authority here: it has just restored what the user last chose, and the
+        // filters this panel is still holding belong to a webview that no longer exists.
+        this.search = message.search;
+        this.dates = message.dates;
         await this.reload();
         break;
       case 'refresh':
         await this.reload();
         break;
+      case 'clearFilters':
+        await this.clearFilters();
+        break;
       case 'search':
         this.search = message.search;
+        await this.reload();
+        break;
+      case 'dates':
+        this.dates = message.range;
         await this.reload();
         break;
       case 'copy':
@@ -302,8 +343,8 @@ export class BraidPanel {
       case 'selectCommit':
         await this.showDetails(message.sha);
         break;
-      case 'openDiff':
-        await this.openDiff(message.sha, message.index);
+      case 'selectUncommitted':
+        commitFiles?.working(this.repo.root, this.working);
         break;
       case 'requestMenu':
         await this.showMenu(message.target, message.x, message.y);
@@ -447,6 +488,33 @@ export class BraidPanel {
     }
   }
 
+  /** Whether anything at all is narrowing the walk, wherever it was set. */
+  private isFiltered(): boolean {
+    return (
+      this.search !== null ||
+      this.dates !== null ||
+      this.filters.refs() !== null ||
+      this.filters.authorArgs().length > 0
+    );
+  }
+
+  /**
+   * Drop every filter at once: the search, the date range, and both sidebar views.
+   *
+   * The sort is deliberately left alone. It is an ordering rather than a filter - nothing is hidden
+   * by it - and it has its own way back in the title bar.
+   */
+  async clearFilters(): Promise<void> {
+    this.search = null;
+    this.dates = null;
+    this.filters.clear();
+
+    // Put the boxes back before the walk rather than after it, so nothing on screen is claiming a
+    // filter that is no longer being applied.
+    this.post({ type: 'filtersCleared' });
+    await this.reload();
+  }
+
   /**
    * Load one commit's message and file list. Selection follows the arrow keys, so a held-down key
    * would otherwise queue a `git show` per row - each new request cancels the one before it.
@@ -460,8 +528,12 @@ export class BraidPanel {
       const details = await loadCommitDetails(this.git, this.repo, sha, controller.signal);
 
       if (!controller.signal.aborted) {
-        this.details = details;
-        this.post({ type: 'details', details });
+        // The pane gets the commit; the sidebar gets what it changed. Splitting them here is what
+        // keeps a 500-file merge from being structured-cloned into the webview on every keypress.
+        const { files: _files, ...info } = details;
+
+        this.post({ type: 'details', details: info });
+        commitFiles?.show(this.repo.root, details);
       }
     } catch (err) {
       if (!controller.signal.aborted) {
@@ -472,34 +544,6 @@ export class BraidPanel {
         this.detailsLoading = null;
       }
     }
-  }
-
-  private async openDiff(sha: string, index: number): Promise<void> {
-    const details =
-      this.details?.sha === sha
-        ? this.details
-        : await loadCommitDetails(this.git, this.repo, sha);
-
-    const file = details.files[index];
-    if (file === undefined) {
-      return;
-    }
-
-    const short = sha.slice(0, 8);
-    const name = file.path.split('/').pop() ?? file.path;
-
-    // Both sides are addressed by blob OID, so a rename diffs correctly even though the two sides
-    // have different paths.
-    const left = revisionUri(this.repo.root, file.oldPath ?? file.path, file.oldBlob, `${short}^`);
-    const right = revisionUri(this.repo.root, file.path, file.newBlob, short);
-
-    await vscode.commands.executeCommand(
-      'vscode.diff',
-      left,
-      right,
-      `${name} (${short})`,
-      { preview: true },
-    );
   }
 
   /**
@@ -516,6 +560,18 @@ export class BraidPanel {
    * changes, because the view is rebuilt from scratch each time the tab is shown.
    */
   private postOperation(state: Awaited<ReturnType<typeof readRepoState>>): void {
+    this.working = state.files;
+
+    this.post({
+      type: 'working',
+      total: state.files.length,
+      staged: state.files.filter((file) => file.staged).length,
+      unstaged: state.files.filter((file) => file.unstaged).length,
+      untracked: state.files.filter((file) => file.untracked).length,
+      conflicted: state.files.filter((file) => file.conflicted).length,
+      branch: state.branch,
+    });
+
     this.post({
       type: 'operation',
       operation: state.operation,
@@ -540,7 +596,7 @@ export class BraidPanel {
 
     const config = vscode.workspace.getConfiguration('braid');
 
-    this.post({ type: 'reset' });
+    this.post({ type: 'reset', filtered: this.isFiltered() });
     this.post({
       type: 'init',
       repoName: this.repo.root.split('/').pop() ?? this.repo.root,
@@ -557,6 +613,15 @@ export class BraidPanel {
     // them. Cheap enough to re-read on every reload; a repository has a handful, not thousands.
     const stashList = await listStashes(this.git, this.repo).catch(() => []);
     const stashes = new Map(stashList.map((stash) => [stash.sha, stash.name]));
+
+    /*
+     * Asked only when there is a lower bound to place, and remembered after the first time - a
+     * repository with no date filter never pays for the question at all.
+     */
+    const dates = dateArgs(
+      this.dates,
+      this.dates?.since == null ? false : await this.git.atLeast(2, 37),
+    );
 
     // Before the history, not after: if git is mid-rebase the user should be told that while the
     // walk is still running, not once it finishes.
@@ -605,7 +670,7 @@ export class BraidPanel {
         {
           batchSize: 500,
           maxCommits: config.get<number>('maxCommits', 250_000),
-          filters: [...searchArgs(this.search), ...this.filters.authorArgs()],
+          filters: filterArgs(this.search, this.filters.authorArgs(), dates),
           refs: this.filters.refs(),
           stashes,
         },
@@ -657,6 +722,11 @@ ${BODY_MARKUP}
     this.watcher.dispose();
     BraidPanel.open.delete(this.repo.root);
     this.setActive(false);
+
+    // With no graph left to select in, the file list is showing a commit nobody can point at.
+    if (BraidPanel.open.size === 0) {
+      commitFiles?.clear();
+    }
 
     for (const d of this.disposables) {
       d.dispose();

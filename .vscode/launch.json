@@ -10,7 +10,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "D:\\DotNetProjects\\GitFlick"
+        "D:\\Projects\\GitFlick"
       ],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "npm: build"

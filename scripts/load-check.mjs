@@ -59,6 +59,9 @@ function commitInto(dir, n) {
 
 const repoPath = given ?? makeTempRepo();
 
+/** `--break-view=<id>`: make one view id unknown, the way a stale manifest does. */
+const breakView = process.argv.find((a) => a.startsWith('--break-view='))?.slice('--break-view='.length) ?? null;
+
 const commands = new Map();
 const posted = [];
 const outputLines = [];
@@ -67,6 +70,7 @@ let panelCreated = null;
 const problems = [];
 const contentProviders = new Map();
 const diffsOpened = [];
+const contextKeys = new Map();
 let statusBarItem = null;
 let quickPick = null;
 
@@ -115,6 +119,9 @@ const vscodeStub = {
       if (id === 'vscode.diff') {
         diffsOpened.push({ left: args[0], right: args[1], title: args[2] });
       }
+      if (id === 'setContext') {
+        contextKeys.set(args[0], args[1]);
+      }
       return undefined;
     },
   },
@@ -123,12 +130,19 @@ const vscodeStub = {
     createOutputChannel: () => ({
       info: (m) => outputLines.push(`info  ${m}`),
       warn: (m) => outputLines.push(`warn  ${m}`),
+      error: (m) => outputLines.push(`error ${m}`),
       debug: (m) => outputLines.push(`debug ${m}`),
       show() {},
       dispose() {},
     }),
     showInformationMessage: (m) => problems.push(`unexpected info message: ${m}`),
     showWarningMessage: (m) => problems.push(`unexpected warning: ${m}`),
+    // Activation reports its own failure through this one, so it has to exist here - and anything
+    // arriving on it is a failure by definition.
+    showErrorMessage: async (m) => {
+      problems.push(`unexpected error message: ${m}`);
+      return undefined;
+    },
     setStatusBarMessage: () => ({ dispose() {} }),
     createQuickPick: () => {
       const handlers = {};
@@ -145,6 +159,8 @@ const vscodeStub = {
       return picker;
     },
     createTreeView: (id, options) => {
+      // A stale manifest, on demand: see the self-test below for what this is proving.
+      if (breakView === id) throw new Error(`No view is registered with id: ${id}`);
       treeProviders.set(id, options.treeDataProvider);
       const view = {
         message: undefined,
@@ -197,7 +213,8 @@ const vscodeStub = {
   },
   StatusBarAlignment: { Left: 1, Right: 2 },
   EventEmitter: StubEmitter,
-  ThemeIcon: class { constructor(id) { this.id = id; } },
+  ThemeIcon: class { constructor(id, color) { this.id = id; this.color = color; } },
+  ThemeColor: class { constructor(id) { this.id = id; } },
   TreeItem: class { constructor(label, collapsibleState) { this.label = label; this.collapsibleState = collapsibleState; } },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
@@ -256,10 +273,49 @@ const extension = require_(resolve('dist/extension.js'));
 
 console.log('exports        :', Object.keys(extension).join(', '));
 
-const context = { subscriptions: [], extensionUri: uri(resolve('.').replace(/\\/g, '/')) };
+const memory = new Map();
+const context = {
+  subscriptions: [],
+  extensionUri: uri(resolve('.').replace(/\\/g, '/')),
+  globalState: {
+    get: (key, fallback) => memory.get(key) ?? fallback,
+    update: async (key, value) => void memory.set(key, value),
+  },
+};
 extension.activate(context);
 
 await new Promise((r) => setTimeout(r, 800));
+
+/*
+ * Activation is all or nothing: everything below is meaningless if `activate` threw on the way
+ * through, and it used to fail without saying so.
+ */
+if (!outputLines.some((line) => line.includes('Braid activated'))) {
+  problems.push('activate() did not run to completion');
+}
+
+/*
+ * A self-test of the guard around activation, run as its own process with `--break-view=<id>`.
+ *
+ * It reproduces a window whose manifest is older than its code - `createTreeView` throwing for a
+ * view that window has never heard of - which is how adding a view and not restarting the
+ * Extension Development Host used to look: no commands, no `braid.hasRepository`, all three
+ * Source Control sections gone, and not a word about any of it.
+ */
+if (breakView !== null) {
+  const logged = outputLines.some((line) => line.includes('Braid failed to activate'));
+  const shown = problems.some((p) => p.includes('unexpected error message'));
+
+  console.log('broken view    :', breakView, '|', logged ? 'logged' : 'NOT LOGGED', '|', shown ? 'shown to the user' : 'NOT SHOWN');
+
+  if (!logged || !shown) {
+    console.error('\nFAILED: a failed activation said nothing.');
+    process.exit(1);
+  }
+
+  console.log('\nOK - a failed activation reports itself.');
+  process.exit(0);
+}
 
 console.log('commands       :', [...commands.keys()].join(', '));
 console.log('status bar     :', statusBarItem === null ? 'NOT CREATED' : JSON.stringify({ text: statusBarItem.text, command: statusBarItem.command, visible: statusBarItem.visible }));
@@ -270,6 +326,18 @@ if (statusBarItem === null) {
   if (statusBarItem.command !== 'braid.openGraph') problems.push('status bar item runs the wrong command: ' + statusBarItem.command);
   if (!statusBarItem.visible) problems.push('status bar item stayed hidden in a real repository');
 }
+
+/*
+ * The two Source Control sections are contributed with `when: braid.hasRepository`, so this key is
+ * the whole of their visibility. A key that never arrives is an extension with no sidebar at all,
+ * and nothing else in this run would notice.
+ */
+console.log('context keys   :', JSON.stringify(Object.fromEntries(contextKeys)));
+
+if (contextKeys.get('braid.hasRepository') !== true) {
+  problems.push('braid.hasRepository was not set in a real repository');
+}
+
 console.log('subscriptions  :', context.subscriptions.length);
 
 /*
@@ -278,14 +346,29 @@ console.log('subscriptions  :', context.subscriptions.length);
  * shipped in the manifest with nothing behind it, and a hand-maintained expectation would have to
  * be updated by the same person who forgot the registration.
  */
-const contributed = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-  .contributes.commands.map((entry) => entry.command);
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const contributed = manifest.contributes.commands.map((entry) => entry.command);
 
 console.log('contributed    :', contributed.length, 'commands');
 
 for (const expected of contributed) {
   if (!commands.has(expected)) {
     problems.push(`contributed but never registered: ${expected}`);
+  }
+}
+
+/*
+ * The same staleness the other way round. A tree view created in code but contributed to no
+ * container has nowhere to appear, and since Braid gave up its own Activity Bar container there is
+ * no second home to fall back to - it would simply never be seen, silently.
+ */
+const scmViews = (manifest.contributes.views?.scm ?? []).map((view) => view.id);
+
+console.log('scm views      :', scmViews.join(', ') || 'NONE');
+
+for (const id of treeViews.keys()) {
+  if (!scmViews.includes(id)) {
+    problems.push(`tree view is not contributed to Source Control: ${id}`);
   }
 }
 
@@ -301,7 +384,7 @@ if (panelCreated === null) {
 if (messageHandler === null) {
   problems.push('panel never subscribed to webview messages');
 } else {
-  messageHandler({ type: 'ready' });
+  messageHandler({ type: 'ready', search: null, dates: null });
 
   // The panel deliberately does not await its own message handler - VS Code's event emitter has
   // nowhere to put the promise - so poll for the terminal message rather than awaiting the call.
@@ -330,31 +413,73 @@ if (sampleSha === undefined) {
   if (details === undefined) {
     problems.push('selecting a commit produced no details');
   } else {
-    console.log('details        :', details.sha.slice(0, 8), '|', details.files.length, 'files');
+    console.log('details        :', details.sha.slice(0, 8));
     console.log('  message      :', JSON.stringify(details.body.split('\n')[0]?.slice(0, 60)));
-    for (const f of details.files.slice(0, 3)) {
-      console.log(`  ${f.status} ${f.path}${f.oldPath === null ? '' : ` (was ${f.oldPath})`}`);
-    }
 
     if (details.body.length === 0) {
       problems.push('commit message came back empty');
     }
 
-    if (details.files.length === 0) {
-      problems.push('commit reported no changed files');
-    }
-
-    if (details.files.some((f) => f.newBlob === null && f.status !== 'D')) {
-      problems.push('a non-deleted file has no blob to diff against');
+    // The files go to Source Control instead. Sending them here as well would be paying twice.
+    if ('files' in details) {
+      problems.push('the details message still carries the file list');
     }
   }
 }
 
-// Opening a diff has to survive the whole chain: raw record -> blob OID -> URI -> content provider.
-const details = posted.find((m) => m.type === 'details')?.details;
+/*
+ * The changed files reach the user through the Commit Files section now, so that is where they get
+ * checked: its provider is the only thing standing between a `git show` and the sidebar.
+ */
+const filesProvider = treeProviders.get('braid.files');
+const filesView = treeViews.get('braid.files');
+const fileNodes = [];
 
-if (details !== undefined && details.files.length > 0) {
-  await messageHandler({ type: 'openDiff', sha: details.sha, index: 0 });
+if (filesProvider === undefined) {
+  problems.push('no tree provider was registered for braid.files');
+} else {
+  const walk = (nodes) => {
+    for (const node of nodes) {
+      if (node.kind === 'file') {
+        fileNodes.push(node);
+      } else {
+        walk(filesProvider.getChildren(node));
+      }
+    }
+  };
+
+  walk(filesProvider.getChildren());
+
+  console.log('commit files   :', fileNodes.length, '|', filesView?.description ?? 'NO DESCRIPTION');
+
+  for (const node of fileNodes.slice(0, 3)) {
+    const item = filesProvider.getTreeItem(node);
+    console.log(`  ${node.file.status} ${item.label}${item.description === undefined ? '' : ` (${item.description})`}`);
+  }
+
+  if (fileNodes.length === 0) {
+    problems.push('the commit files section is empty for a commit that changed files');
+  }
+
+  if (fileNodes.some((n) => n.file.newBlob === null && n.file.status !== 'D')) {
+    problems.push('a non-deleted file has no blob to diff against');
+  }
+
+  // Flat reaches the same files by another route; a mode that loses rows is a bug either way.
+  await commands.get('braid.filesAsList')();
+  const flat = filesProvider.getChildren();
+  await commands.get('braid.filesAsTree')();
+
+  if (flat.length !== fileNodes.length) {
+    problems.push(`flat view shows ${flat.length} files, tree view ${fileNodes.length}`);
+  }
+}
+
+// Opening a diff has to survive the whole chain: raw record -> blob OID -> URI -> content provider.
+const firstFile = fileNodes[0];
+
+if (firstFile !== undefined) {
+  await commands.get('braid.openCommitFile')(firstFile);
 
   const opened = diffsOpened[0];
 
@@ -372,7 +497,7 @@ if (details !== undefined && details.files.length > 0) {
       const left = await provider.provideTextDocumentContent(opened.left);
       console.log('  content      :', text.length, 'chars (was', left.length + ')');
 
-      if (text.length === 0 && details.files[0].newBlob !== null) {
+      if (text.length === 0 && firstFile.file.newBlob !== null) {
         problems.push('the diff resolved to empty content for a file that exists');
       }
     }
@@ -427,7 +552,8 @@ if (done === undefined) {
     return null;
   };
 
-  const impossible = await runSearch({ query: 'zzz-no-such-commit-zzz', mode: 'message' });
+  const plain = { regex: false, caseSensitive: false, allTerms: false, invert: false };
+  const impossible = await runSearch({ query: 'zzz-no-such-commit-zzz', mode: 'message', ...plain });
   console.log('search (miss)  :', impossible, 'of', baseline);
 
   if (impossible !== 0) {
@@ -436,6 +562,52 @@ if (done === undefined) {
 
   const cleared = await runSearch(null);
   console.log('search cleared :', cleared, 'of', baseline);
+
+  /*
+   * The date filter, end to end. The fixture was committed a moment ago, so a window that ends
+   * yesterday must be empty and one that starts today must hold everything - and the arguments in
+   * between have to survive `--since-as-filter` on a new git and `--since` on an old one.
+   */
+  const runDates = async (range) => {
+    const from = posted.filter((m) => m.type === 'done').length;
+    messageHandler({ type: 'dates', range });
+
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      const dones = posted.filter((m) => m.type === 'done');
+      if (dones.length > from) {
+        return dones[dones.length - 1].total;
+      }
+
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    return null;
+  };
+
+  const dayOf = (offset) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const todayOnly = await runDates({ since: dayOf(0), until: null });
+  const beforeToday = await runDates({ since: null, until: dayOf(-1) });
+  const noRange = await runDates(null);
+
+  console.log('dates today    :', todayOnly, '| ended yesterday:', beforeToday, '| cleared:', noRange, '| of', baseline);
+
+  if (todayOnly !== baseline) {
+    problems.push(`a range starting today lost ${baseline - todayOnly} of ${baseline} commits made today`);
+  }
+
+  if (beforeToday !== 0) {
+    problems.push(`a range ending yesterday returned ${beforeToday} commits made today`);
+  }
+
+  if (noRange !== baseline) {
+    problems.push(`clearing the date range left ${noRange} of ${baseline} commits`);
+  }
 
   if (cleared !== baseline) {
     problems.push(`clearing the search gave ${cleared} commits, expected ${baseline}`);
@@ -719,6 +891,85 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 }
 
 /*
+ * One gesture, four sources. The filters live in three different places - the graph's search box,
+ * its date range, and two tree views in Source Control - and the whole point of the button is that
+ * the reader does not have to remember which of them they used. So set all of them, then check that
+ * one click puts every one back and the history is whole again.
+ */
+{
+  const refsProvider = treeProviders.get('braid.refs');
+  const refsHandler = checkboxHandlers.get('braid.refs');
+  const authorsProvider = treeProviders.get('braid.authors');
+  const authorsHandler = checkboxHandlers.get('braid.authors');
+  const baseline = posted.filter((m) => m.type === 'done').pop()?.total ?? 0;
+
+  const settle = async (from) => {
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && posted.filter((m) => m.type === 'done').length <= from) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return posted.filter((m) => m.type === 'done').pop()?.total ?? -1;
+  };
+
+  // A ref unticked, an author ticked, a search, and a date range that ends before the repository.
+  const group = refsProvider.getChildren()[0];
+  refsHandler({ items: [[refsProvider.getChildren(group)[0], 0]] });
+  authorsHandler({ items: [[(await authorsProvider.getChildren())[0], 1]] });
+  messageHandler({
+    type: 'search',
+    search: { query: 'commit', mode: 'message', regex: false, caseSensitive: false, allTerms: false, invert: false },
+  });
+  await settle(posted.filter((m) => m.type === 'done').length - 1);
+
+  const narrowed = await (async () => {
+    const from = posted.filter((m) => m.type === 'done').length;
+    messageHandler({ type: 'dates', range: { since: null, until: '2001-01-01' } });
+    return settle(from);
+  })();
+
+  const flagged = posted.filter((m) => m.type === 'reset').pop()?.filtered;
+  console.log('\nfilters set    :', narrowed, 'of', baseline, '| reset says filtered:', flagged);
+
+  if (flagged !== true) {
+    problems.push('the reset message did not report the graph as filtered');
+  }
+
+  const clearedFrom = posted.filter((m) => m.type === 'done').length;
+  messageHandler({ type: 'clearFilters' });
+  const restored = await settle(clearedFrom);
+
+  const stillFlagged = posted.filter((m) => m.type === 'reset').pop()?.filtered;
+  const hiddenRefs = refsProvider.getChildren(group).filter((r) => r.isHidden ?? false).length;
+
+  console.log(
+    'filters cleared:',
+    restored,
+    'of',
+    baseline,
+    '| view told:',
+    posted.some((m) => m.type === 'filtersCleared'),
+    '| reset says filtered:',
+    stillFlagged,
+  );
+
+  if (restored !== baseline) {
+    problems.push(`clearing every filter left ${restored} of ${baseline} commits`);
+  }
+
+  if (stillFlagged !== false) {
+    problems.push('the graph still reports itself as filtered after everything was cleared');
+  }
+
+  if (!posted.some((m) => m.type === 'filtersCleared')) {
+    problems.push('the view was never told to put its own boxes back');
+  }
+
+  if (hiddenRefs !== 0) {
+    problems.push(`${hiddenRefs} refs were left unticked after clearing every filter`);
+  }
+}
+
+/*
  * The auto-refresh check: commit from outside the extension, exactly as the user would from a
  * terminal, and the graph must reload itself without being asked. This is the failure mode the
  * whole watcher exists for.
@@ -765,6 +1016,110 @@ if (watchTest) {
     problems.push('writing an untracked file triggered a needless reload');
   } else {
     console.log('quiet churn    : ignored, as it should be');
+  }
+}
+
+/*
+ * The working tree's own row - the one row in the graph that is not a commit, and so the one that
+ * takes a path nothing else here exercises: `git status` -> a `working` message -> a file list with
+ * no blob OIDs on either side -> a diff whose right-hand side is the file on disk.
+ */
+{
+  writeFileSync(join(repoPath, 'f1.txt'), 'edited but not committed\n');
+  // Its own untracked file rather than one an earlier section happened to leave behind: that
+  // one only exists under --watch, and a test that passes depending on a flag is not one.
+  writeFileSync(join(repoPath, 'never-added.txt'), 'not in the index\n');
+
+  const from = posted.filter((m) => m.type === 'done').length;
+  messageHandler({ type: 'refresh' });
+
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline && posted.filter((m) => m.type === 'done').length === from) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  const state = posted.filter((m) => m.type === 'working').pop();
+
+  console.log(
+    '\nworking tree   :',
+    state === undefined
+      ? 'NOT REPORTED'
+      : `${state.total} files on ${state.branch} (${state.unstaged} unstaged, ${state.untracked} untracked)`,
+  );
+
+  if (state === undefined || state.total === 0) {
+    problems.push('a dirty working tree was not reported to the view');
+  } else if (state.unstaged === 0 || state.untracked === 0) {
+    problems.push(
+      `the working tree came back as ${state.unstaged} unstaged and ${state.untracked} untracked; both were expected`,
+    );
+  }
+
+  await messageHandler({ type: 'selectUncommitted' });
+
+  const provider = treeProviders.get('braid.files');
+  const nodes = [];
+  const walk = (list) => {
+    for (const node of list) {
+      if (node.kind === 'file') {
+        nodes.push(node);
+      } else {
+        walk(provider.getChildren(node));
+      }
+    }
+  };
+
+  walk(provider.getChildren());
+
+  console.log('  files listed :', nodes.map((n) => `${n.file.status} ${n.file.path}`).join(', ') || '(none)');
+  console.log('  section says :', treeViews.get('braid.files')?.description ?? 'NO DESCRIPTION');
+
+  if (state !== undefined && nodes.length !== state.total) {
+    problems.push(`the section listed ${nodes.length} working-tree files, git status found ${state.total}`);
+  }
+
+  if (!nodes.some((n) => n.file.status === '?')) {
+    problems.push('an untracked file was not listed as untracked');
+  }
+
+  const edited = nodes.find((n) => n.file.status === 'M');
+
+  if (edited === undefined) {
+    problems.push('the edited file was not listed as modified');
+  } else {
+    diffsOpened.length = 0;
+    await commands.get('braid.openCommitFile')(edited);
+
+    const opened = diffsOpened[0];
+
+    if (opened === undefined) {
+      problems.push('opening an uncommitted file produced no diff');
+    } else {
+      console.log('  diff         :', opened.title);
+
+      if (!opened.title.includes('working tree')) {
+        problems.push(`an uncommitted diff was titled ${opened.title}`);
+      }
+
+      // The right side is the file itself, not a revision Braid serves.
+      if (!String(opened.right.fsPath ?? '').endsWith('f1.txt')) {
+        problems.push('the right side of an uncommitted diff is not the file on disk');
+      }
+
+      // The left side has no blob OID, so it can only come back through `HEAD:<path>`.
+      const contents = contentProviders.get('braid-git');
+      const left = await contents.provideTextDocumentContent(opened.left);
+
+      console.log('  HEAD side    :', left.length, 'chars');
+
+      if (left.length === 0) {
+        problems.push('the HEAD side of an uncommitted diff came back empty');
+      }
+
+      if (left.includes('edited but not committed')) {
+        problems.push('the HEAD side of an uncommitted diff shows the working copy');
+      }
+    }
   }
 }
 

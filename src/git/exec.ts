@@ -164,6 +164,7 @@ export class Git {
   private readonly networkIdleTimeoutMs: number;
   private active = 0;
   private readonly waiting: (() => void)[] = [];
+  private versionQuery: Promise<number[]> | null = null;
 
   constructor(options: {
     gitPath?: string;
@@ -181,6 +182,28 @@ export class Git {
   /** Run a command that only observes the repository, and throw if it fails. */
   async runRead(cwd: string, args: readonly string[], options: GitRunOptions = {}): Promise<string> {
     return this.throwOnFailure(await this.tryRead(cwd, args, options), args);
+  }
+
+  /**
+   * Whether the installed git is at least this new, asked once and remembered.
+   *
+   * Feature detection rather than a floor in the manifest: exactly one option so far needs a
+   * version this recent (`--since-as-filter`, git 2.37), and refusing to run on an older git for
+   * the sake of it would be a worse trade than doing without that one option.
+   *
+   * A git that cannot be asked is assumed to be old. The consequence is a slightly blunter date
+   * filter, which is the right way round for a guess.
+   */
+  async atLeast(major: number, minor: number): Promise<boolean> {
+    this.versionQuery ??= this.tryRead(process.cwd(), ['--version']).then((result) => {
+      const match = /(\d+)\.(\d+)/.exec(result.stdout);
+
+      return match === null ? [0, 0] : [Number(match[1]), Number(match[2])];
+    });
+
+    const [foundMajor = 0, foundMinor = 0] = await this.versionQuery;
+
+    return foundMajor > major || (foundMajor === major && foundMinor >= minor);
   }
 
   /**

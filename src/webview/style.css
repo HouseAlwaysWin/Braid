@@ -33,6 +33,17 @@
   --braid-author-hue: 0;
   --braid-author-l: 70%;
   --braid-author-c: 0.105;
+
+  /*
+   * The columns, declared once. The header row and every commit row lay themselves out with this
+   * same template, which is what keeps a label sitting over its own column - alignment by
+   * construction rather than by two sets of widths that have to be kept in step by hand.
+   *
+   * `ch` resolves in the *grid container's* font, and both containers use the body font, so the
+   * cells inside them are free to be a size of their own without moving the boundaries.
+   */
+  --braid-columns: minmax(6ch, 1fr) 16ch 10ch 9ch;
+  --braid-column-gap: 8px;
 }
 
 /* A light theme is not a dark theme inverted: readable text on white has to be darker *and* can
@@ -59,10 +70,15 @@ body {
   flex-direction: column;
 }
 
+/*
+ * Wrapping rather than squeezing: with a custom date range open there is more in this bar than a
+ * narrow panel can hold, and a search box shrunk to four characters is worse than a second line.
+ */
 #header {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--vscode-panel-border, transparent);
   flex: 0 0 auto;
@@ -79,6 +95,103 @@ body {
 
 #header.error #status {
   color: var(--vscode-errorForeground);
+}
+
+/*
+ * The column header. A sibling of the scroller, not a row inside it: it has to stay put while the
+ * history moves under it, and it must not be one of the elements virtualisation recycles.
+ *
+ * Its left padding is set from script, to whatever the graph is currently wide - the one measurement
+ * that cannot live in the stylesheet, because it depends on how many lanes the repository needs.
+ */
+#columns {
+  display: grid;
+  grid-template-columns: var(--braid-columns);
+  align-items: center;
+  gap: var(--braid-column-gap);
+  height: var(--braid-row-height);
+  padding-right: 12px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  user-select: none;
+}
+
+#columns .col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 0.9em;
+  text-align: left;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+#columns .col:hover:enabled {
+  color: var(--braid-fg);
+}
+
+#columns .col:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: 1px;
+}
+
+/* The column being sorted by stops reading as chrome and starts reading as state. */
+#columns .col.sorted {
+  color: var(--braid-fg);
+}
+
+/*
+ * Sorting has to wait for the last page. Comparing half a history would reorder the rows under the
+ * reader every time git delivers another batch, which is a worse answer than a moment's wait.
+ */
+#columns .col:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.sort-arrow {
+  font-size: 0.8em;
+}
+
+/*
+ * Sorted means flat. A lane point's Y is a row index, so once the rows are in any order but git's
+ * the lines would join commits that are no longer neighbours - drawing them would be a picture of
+ * a history that does not exist.
+ */
+body.flat #graph {
+  display: none;
+}
+
+/*
+ * The two chips in the title bar. Each is on screen only while it has something to undo - a button
+ * that spends most of its life doing nothing is furniture, and these are both one click from a
+ * state the reader may not have meant to be in.
+ */
+#clear-sort,
+#clear-filters {
+  padding: 0 6px;
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 3px;
+  background: none;
+  font-family: inherit;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+#clear-sort:hover,
+#clear-filters:hover {
+  color: var(--braid-fg);
+  border-color: var(--vscode-focusBorder, #0078d4);
 }
 
 #main {
@@ -122,17 +235,50 @@ body {
   right: 0;
   height: var(--braid-row-height);
   line-height: var(--braid-row-height);
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--braid-columns);
   align-items: center;
-  gap: 8px;
+  gap: var(--braid-column-gap);
   white-space: nowrap;
   box-sizing: border-box;
   padding-right: 12px;
   overflow: hidden;
 }
 
+/*
+ * Refs and the subject share the first column: how many badges a commit carries is a property of
+ * the commit, and a grid cannot have a variable number of cells. Inside, they lay out exactly as
+ * they did when the whole row was one flex line.
+ */
+.cell-subject {
+  display: flex;
+  align-items: center;
+  gap: var(--braid-column-gap);
+  min-width: 0;
+  overflow: hidden;
+}
+
 .row:hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+/*
+ * The working tree's row. Everything about it says "not a commit": the label is quieter than a
+ * subject, the hash column holds `*` rather than eight hex characters, and the dot the canvas draws
+ * for it is hollow and dashed. It is the only row on screen that is about now rather than the past.
+ */
+.row.uncommitted .subject {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.working-count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.row.uncommitted .sha {
+  color: var(--vscode-descriptionForeground);
 }
 
 /*
@@ -152,12 +298,6 @@ body {
   color: var(--vscode-descriptionForeground);
   font-size: 0.9em;
   min-width: 0;
-}
-
-/* A long name yields before the subject does, but is still allowed to shrink. */
-.author {
-  flex: 0 1 auto;
-  max-width: 16ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -166,7 +306,7 @@ body {
  * Opt-in by class rather than opt-out, so the plain grey is what shows if the hue never arrives.
  * The other way round, a missing `--braid-author-hue` would paint every name the same pink.
  */
-body.author-tint .author {
+body.author-tint .row .author {
   color: oklch(var(--braid-author-l) var(--braid-author-c) var(--braid-author-hue));
 }
 
@@ -175,13 +315,8 @@ body.author-tint .author {
  * Tinting names would trade away the one thing they asked for, so there it stays off - including
  * `vscode-high-contrast-light`, which VS Code stamps with both classes.
  */
-body.vscode-high-contrast.author-tint .author {
+body.vscode-high-contrast.author-tint .row .author {
   color: var(--vscode-descriptionForeground);
-}
-
-.date,
-.sha {
-  flex: 0 0 auto;
 }
 
 .sha {
@@ -234,7 +369,7 @@ body.vscode-high-contrast.author-tint .author {
 #details {
   flex: 0 0 auto;
   box-sizing: border-box;
-  height: 260px;
+  height: 200px;
   overflow: auto;
   border-top: 1px solid var(--vscode-panel-border, #454545);
   padding: 10px 12px 14px;
@@ -270,54 +405,6 @@ body.vscode-high-contrast.author-tint .author {
   border-radius: 4px;
 }
 
-.files-heading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 12px 0 4px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.9em;
-}
-
-.file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.file:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.file-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: var(--vscode-editor-font-family);
-  font-size: 0.92em;
-}
-
-/* One letter, fixed width, so the paths line up into a column. */
-.status {
-  flex: 0 0 1.2em;
-  text-align: center;
-  font-weight: 600;
-  font-size: 0.85em;
-}
-
-.status-A { color: var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
-.status-M { color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); }
-.status-D { color: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39); }
-.status-R,
-.status-C { color: var(--vscode-gitDecoration-renamedResourceForeground, #73c991); }
-.status-T,
-.status-U,
-.status-X { color: var(--vscode-descriptionForeground); }
-
 #search-box {
   margin-left: auto;
   display: flex;
@@ -325,8 +412,28 @@ body.vscode-high-contrast.author-tint .author {
   align-items: center;
 }
 
-#search-input,
-#search-mode {
+/*
+ * The border belongs to the wrapper, not to the input: the switches live inside the box the way
+ * VS Code's own find widget does. Laying them out in flow rather than floating them over the text
+ * means the box is exactly as wide as the switches this mode actually offers - no padding to keep
+ * in step with how many of them are on screen.
+ */
+#search-field {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 2px 1px 6px;
+  background: var(--vscode-input-background, transparent);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, #454545));
+  border-radius: 3px;
+}
+
+#search-field:focus-within {
+  border-color: var(--vscode-focusBorder, #0078d4);
+}
+
+#search-mode,
+#date-range {
   background: var(--vscode-input-background, transparent);
   color: var(--vscode-input-foreground, inherit);
   border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, #454545));
@@ -337,17 +444,130 @@ body.vscode-high-contrast.author-tint .author {
   outline: none;
 }
 
-#search-input {
-  width: 22ch;
+#search-mode:focus,
+#date-range:focus {
+  border-color: var(--vscode-focusBorder, #0078d4);
 }
 
-#search-input:focus,
-#search-mode:focus {
+/*
+ * The two date pickers, beside the dropdown that summons them.
+ *
+ * `[hidden]` needs saying explicitly. The attribute works through a UA rule, and *any* author
+ * declaration of `display` beats the whole UA stylesheet regardless of specificity - so a bare
+ * `display: flex` here quietly makes the element unhideable, which is exactly what it did.
+ */
+#date-custom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+#date-custom[hidden] {
+  display: none;
+}
+
+.date-arrow {
+  opacity: 0.7;
+}
+
+#date-custom input {
+  background: var(--vscode-input-background, transparent);
+  color: var(--vscode-input-foreground, inherit);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, #454545));
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 1em;
+  outline: none;
+}
+
+#date-custom input:focus {
   border-color: var(--vscode-focusBorder, #0078d4);
+}
+
+/*
+ * Its own way out. Picking `any time` from the dropdown does the same thing, but while both dates
+ * are empty nothing is filtered - so the `clear filters` chip is not on screen to do it, and
+ * something that appeared on its own needs a way to leave.
+ */
+#date-close {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#date-close:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  color: var(--braid-fg);
+}
+
+#search-input {
+  width: 22ch;
+  padding: 1px 0;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-input-foreground, inherit);
+  font-family: inherit;
+  font-size: 0.92em;
+  outline: none;
 }
 
 #search-input::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+}
+
+#search-toggles {
+  display: flex;
+  gap: 1px;
+}
+
+/* The theme has variables for exactly this control - they are what its own find box is painted with. */
+.toggle {
+  min-width: 19px;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-family: inherit;
+  font-size: 0.78em;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--vscode-inputOption-hoverBackground, var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2)));
+  color: var(--braid-fg);
+}
+
+.toggle.on {
+  color: var(--vscode-inputOption-activeForeground, var(--braid-fg));
+  background: var(--vscode-inputOption-activeBackground, rgba(0, 120, 212, 0.4));
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+}
+
+.toggle:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: 1px;
+}
+
+/*
+ * Where a row matched, not that it matched - git already dropped the ones that did not. The find
+ * colours are the pair a theme has already tuned for text highlighted inside text.
+ */
+.hit {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  color: var(--vscode-editor-foreground, inherit);
+  border-radius: 2px;
 }
 
 /*
@@ -399,19 +619,6 @@ body.vscode-high-contrast.author-tint .author {
   color: var(--vscode-descriptionForeground);
 }
 
-/* In a list of files under one folder, the filename is the only part that differs. */
-.path-dir {
-  color: var(--vscode-descriptionForeground);
-}
-
-.path-name {
-  color: var(--braid-fg);
-}
-
-.rename-arrow {
-  color: var(--vscode-gitDecoration-renamedResourceForeground, #73c991);
-}
-
 /*
  * The sash. It is 5px of hit area with a 1px line drawn inside it: a border thin enough to look
  * right is too thin to grab, and VS Code's own sashes solve it the same way.
@@ -430,76 +637,6 @@ body.vscode-high-contrast.author-tint .author {
 #splitter:hover,
 #splitter.dragging {
   background: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder, #0078d4));
-}
-
-.files-count {
-  flex: 0 0 auto;
-}
-
-.view-toggle {
-  display: inline-flex;
-  gap: 2px;
-  margin-left: auto;
-}
-
-.view-toggle button {
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  border: 1px solid transparent;
-  border-radius: 3px;
-  padding: 1px 8px;
-  font: inherit;
-  cursor: pointer;
-}
-
-.view-toggle button:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-}
-
-.view-toggle button.active {
-  color: var(--braid-fg);
-  border-color: var(--vscode-panel-border, #454545);
-  background: var(--vscode-toolbar-activeBackground, transparent);
-}
-
-.folder {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.folder:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-/* Fixed width so the folder names line up whether the chevron points down or right. */
-.chevron {
-  flex: 0 0 1em;
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.8em;
-}
-
-.folder-name {
-  color: var(--vscode-descriptionForeground);
-  font-family: var(--vscode-editor-font-family);
-  font-size: 0.92em;
-}
-
-/*
- * A single click only highlights; the diff needs a double-click. The highlight uses the inactive
- * selection colour because focus is still on the commit list, not on this pane.
- */
-.file.selected {
-  background: var(--vscode-list-inactiveSelectionBackground, rgba(127, 127, 127, 0.2));
-}
-
-.file.selected:hover {
-  background: var(--vscode-list-hoverBackground);
 }
 
 /*

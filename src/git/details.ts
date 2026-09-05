@@ -13,6 +13,12 @@ import type { RepoInfo } from './discovery.ts';
 
 /** git's single-letter status, kept as git spells it rather than renamed to something friendlier. */
 export const ChangeStatus = {
+  /**
+   * Not a diff status: a raw record cannot produce it, because git does not know about the file
+   * yet. It arrives from `git status` instead, for the working tree's own changes, and lives here
+   * because the changed-file list draws both from the same shape.
+   */
+  Untracked: '?',
   Added: 'A',
   Copied: 'C',
   Deleted: 'D',

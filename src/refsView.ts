@@ -1,8 +1,8 @@
 /**
  * The Branches & Tags sidebar: which refs the graph should draw.
  *
- * This is the reason Braid has an Activity Bar icon at all. VS Code puts *view containers* there,
- * not commands, so an icon needs a sidebar behind it - and a filter is the one piece of Braid that
+ * It is a section in Source Control rather than an Activity Bar icon of its own - one place for the
+ * repository, next to the changes list, rather than two. A filter is the one piece of Braid that
  * genuinely wants to stay on screen while you work, rather than living in a dropdown above the
  * graph that has to be reopened every time.
  *
@@ -293,11 +293,17 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
    * so the reload is fired only when a tick actually changed. Clearing a list filter should not
    * cost a re-walk of the history.
    */
-  showAll(): void {
+  /**
+   * Clear the filter and repaint, without telling the graph.
+   *
+   * The answer comes back rather than going out as an event because clearing everything at once
+   * reloads the history once at the end, not once per view that had something to drop.
+   */
+  reset(): boolean {
     const hadHidden = this.hidden.size > 0;
 
     if (!hadHidden && this.query.length === 0) {
-      return;
+      return false;
     }
 
     this.hidden.clear();
@@ -305,7 +311,11 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     this.changed.fire(undefined);
     this.updateMessage();
 
-    if (hadHidden) {
+    return hadHidden;
+  }
+
+  showAll(): void {
+    if (this.reset()) {
       this.filterChanged.fire();
     }
   }
