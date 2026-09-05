@@ -586,16 +586,68 @@ function openMenu(event: MouseEvent, target: Target): void {
   vscode.postMessage({ type: 'requestMenu', target, x: event.clientX, y: event.clientY });
 }
 
+/**
+ * The menu items the view answers itself.
+ *
+ * Comparing is not a repository action - it runs no git that changes anything and it depends on
+ * what is selected, which is the view's business and not the host's. It still belongs on the menu:
+ * ctrl-clicking a second commit is not something anybody discovers by trying, and an interaction
+ * with no visible way in is one that does not exist.
+ */
+function localMenuItems(target: Target): { label: string; run: () => void }[] {
+  if (target.kind !== 'commit' || selected < 0) {
+    return [];
+  }
+
+  const from = view[selected];
+  const index = view.findIndex((row) => row.sha === target.sha);
+
+  if (from === undefined || from.uncommitted === true || index < 0 || index === selected) {
+    return [];
+  }
+
+  return [
+    {
+      label: `Compare with ${from.sha.slice(0, 8)}`,
+      run: () => compareWith(index),
+    },
+  ];
+}
+
 function renderMenu(target: Target, items: readonly MenuItem[], x: number, y: number): void {
   closeMenu();
 
-  if (items.length === 0) {
+  const local = localMenuItems(target);
+
+  if (items.length === 0 && local.length === 0) {
     return;
   }
 
   const menu = document.createElement('div');
   menu.className = 'menu';
   menu.setAttribute('role', 'menu');
+
+  for (const item of local) {
+    const el = document.createElement('div');
+
+    el.className = 'menu-item';
+    el.setAttribute('role', 'menuitem');
+    // textContent, like the host's own items: `menu-label` is not a class this stylesheet has.
+    el.textContent = item.label;
+    el.addEventListener('click', () => {
+      closeMenu();
+      item.run();
+    });
+
+    menu.append(el);
+  }
+
+  if (local.length > 0 && items.length > 0) {
+    const rule = document.createElement('div');
+
+    rule.className = 'menu-separator';
+    menu.append(rule);
+  }
 
   let previousGroup: string | null = null;
 

@@ -25,9 +25,10 @@ Working:
   fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
   Files** section in Source Control, as a folded tree or a flat list
-- Ctrl-click a second commit to compare the two: the same section fills with what they differ by,
-  and the pane says how far apart they are - a count for each side, because two commits picked off a
-  graph are not always one behind the other. Escape puts it back
+- Compare two commits: right-click a second one and take **Compare with …**, or ctrl-click it. The
+  same section fills with what they differ by, and the pane says how far apart they are - a count
+  for each side, because two commits picked off a graph are not always one behind the other. Escape
+  puts it back
 - Click a file there to open it in VS Code's own diff editor, renames included
 - Search by message, author, committer, diff content (`-G`) or path, pushed down into `git log`.
   Match case, regular expression, all-words and invert are switches inside the box, each offered
