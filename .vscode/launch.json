@@ -5,12 +5,12 @@
       // F5 opens a second VS Code window with Braid loaded. The second argument is the folder that
       // window opens - without it the dev host starts empty, Braid finds no repository, and it
       // looks like the extension did not load at all.
-      "name": "Run Braid (on GitFlick)",
+      "name": "Run Braid (on GimmeCapture)",
       "type": "extensionHost",
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "D:\\Projects\\GitFlick"
+        "D:\\Projects\\GimmeCapture"
       ],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "npm: build"

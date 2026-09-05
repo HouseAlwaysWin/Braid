@@ -35,7 +35,9 @@ export interface FilterSource {
   clear(): void;
 }
 import { RepoLock } from './git/lock.ts';
-import { describeOperation, readRepoState } from './git/repoState.ts';
+import type { WorkingTree } from './git/repoState.ts';
+import { describeOperation, readRepoState, readWorkingTree } from './git/repoState.ts';
+import { watchWorkingTree } from './git/vscodeGit.ts';
 import { listStashes } from './git/stash.ts';
 import { Remedy, mapGitError } from './git/errors.ts';
 import type { ActionContext, ActionUi, Target } from './actions/registry.ts';
@@ -135,6 +137,8 @@ export class BraidPanel {
    * `git status` - the state was read a moment ago for the in-progress banner anyway.
    */
   private working: FileStatus[] = [];
+  /** Walk only the mainline. A filter like any other: it decides which commits are on screen. */
+  private firstParent = false;
   private readonly filters: FilterSource;
 
   private readonly ui: ActionUi = {
@@ -245,6 +249,11 @@ export class BraidPanel {
       .get<number>('refreshDebounceMs', 600);
 
     this.watcher = new RepoWatcher(repo, () => void this.onRepositoryChanged(), debounce);
+
+    // The watcher sees `.git`, which is where refs move and is not where a file being saved shows
+    // up. The working-tree row would otherwise sit stale until something else caused a reload.
+    this.disposables.push(watchWorkingTree(repo.root, () => void this.refreshWorking()));
+
     this.setActive(true);
   }
 
@@ -320,6 +329,7 @@ export class BraidPanel {
         // filters this panel is still holding belong to a webview that no longer exists.
         this.search = message.search;
         this.dates = message.dates;
+        this.firstParent = message.firstParent;
         await this.reload();
         break;
       case 'refresh':
@@ -334,6 +344,10 @@ export class BraidPanel {
         break;
       case 'dates':
         this.dates = message.range;
+        await this.reload();
+        break;
+      case 'firstParent':
+        this.firstParent = message.on;
         await this.reload();
         break;
       case 'copy':
@@ -493,6 +507,7 @@ export class BraidPanel {
     return (
       this.search !== null ||
       this.dates !== null ||
+      this.firstParent ||
       this.filters.refs() !== null ||
       this.filters.authorArgs().length > 0
     );
@@ -507,6 +522,7 @@ export class BraidPanel {
   async clearFilters(): Promise<void> {
     this.search = null;
     this.dates = null;
+    this.firstParent = false;
     this.filters.clear();
 
     // Put the boxes back before the walk rather than after it, so nothing on screen is claiming a
@@ -559,18 +575,43 @@ export class BraidPanel {
    * Tell the view what git is halfway through. Sent on every reload rather than only when it
    * changes, because the view is rebuilt from scratch each time the tab is shown.
    */
-  private postOperation(state: Awaited<ReturnType<typeof readRepoState>>): void {
-    this.working = state.files;
+  /**
+   * The working tree, and where the branch it sits on stands.
+   *
+   * Both come out of the same `git status -b`, and both change for the same reasons, so they travel
+   * together rather than as two messages that could disagree with each other.
+   */
+  private postWorking(tree: WorkingTree): void {
+    this.working = tree.files;
 
     this.post({
       type: 'working',
-      total: state.files.length,
-      staged: state.files.filter((file) => file.staged).length,
-      unstaged: state.files.filter((file) => file.unstaged).length,
-      untracked: state.files.filter((file) => file.untracked).length,
-      conflicted: state.files.filter((file) => file.conflicted).length,
-      branch: state.branch,
+      total: tree.files.length,
+      staged: tree.files.filter((file) => file.staged).length,
+      unstaged: tree.files.filter((file) => file.unstaged).length,
+      untracked: tree.files.filter((file) => file.untracked).length,
+      conflicted: tree.files.filter((file) => file.conflicted).length,
+      branch: tree.branch,
+      upstream: tree.upstream,
     });
+  }
+
+  /**
+   * Re-read the working tree without touching the history.
+   *
+   * Saving a file changes nothing a walk would produce differently, so re-walking would be paying
+   * for the whole graph to move one row's worth of text.
+   */
+  private async refreshWorking(): Promise<void> {
+    const tree = await readWorkingTree(this.git, this.repo).catch(() => null);
+
+    if (tree !== null) {
+      this.postWorking(tree);
+    }
+  }
+
+  private postOperation(state: Awaited<ReturnType<typeof readRepoState>>): void {
+    this.postWorking(state);
 
     this.post({
       type: 'operation',
@@ -670,6 +711,7 @@ export class BraidPanel {
         {
           batchSize: 500,
           maxCommits: config.get<number>('maxCommits', 250_000),
+          firstParentOnly: this.firstParent,
           filters: filterArgs(this.search, this.filters.authorArgs(), dates),
           refs: this.filters.refs(),
           stashes,

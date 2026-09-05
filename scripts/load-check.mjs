@@ -126,7 +126,13 @@ const vscodeStub = {
     },
   },
   window: {
-    activeTextEditor: undefined,
+    /*
+     * A window with a file open, which is the ordinary one. Its path was being handed to git as a
+     * working directory - a file is not a directory, Node calls that `spawn git ENOENT`, and the
+     * rejection took `braid.hasRepository` with it. Every section in Source Control disappeared,
+     * while the graph itself kept working, because opening that has no editor focused.
+     */
+    activeTextEditor: { document: { uri: uri(repoPath.replace(/\\/g, '/') + '/f1.txt') } },
     createOutputChannel: () => ({
       info: (m) => outputLines.push(`info  ${m}`),
       warn: (m) => outputLines.push(`warn  ${m}`),
@@ -335,7 +341,17 @@ if (statusBarItem === null) {
 console.log('context keys   :', JSON.stringify(Object.fromEntries(contextKeys)));
 
 if (contextKeys.get('braid.hasRepository') !== true) {
-  problems.push('braid.hasRepository was not set in a real repository');
+  problems.push('braid.hasRepository was not set in a real repository (is a file being used as a working directory?)');
+}
+
+/*
+ * And it found it on the first try. Surviving a bad candidate is the safety net; not producing one
+ * is the fix - the open file's *folder* is what git can be run in, and the file itself is not.
+ */
+const unusable = outputLines.filter((line) => line.includes('not a usable folder'));
+
+if (unusable.length > 0) {
+  problems.push(`discovery was handed something it could not use: ${unusable[0]}`);
 }
 
 console.log('subscriptions  :', context.subscriptions.length);
@@ -384,7 +400,7 @@ if (panelCreated === null) {
 if (messageHandler === null) {
   problems.push('panel never subscribed to webview messages');
 } else {
-  messageHandler({ type: 'ready', search: null, dates: null });
+  messageHandler({ type: 'ready', search: null, dates: null, firstParent: false });
 
   // The panel deliberately does not await its own message handler - VS Code's event emitter has
   // nowhere to put the promise - so poll for the terminal message rather than awaiting the call.
@@ -1016,6 +1032,48 @@ if (watchTest) {
     problems.push('writing an untracked file triggered a needless reload');
   } else {
     console.log('quiet churn    : ignored, as it should be');
+  }
+}
+
+/*
+ * `--first-parent` is two halves - an argument to git and an option to the layout - and only one of
+ * them is visible from here. The argument is: every command Braid runs is logged, so the walk can
+ * be read back rather than inferred from a commit count that a linear fixture would not change.
+ */
+{
+  const walks = () => outputLines.filter((line) => line.includes('git log'));
+  const before = walks().length;
+
+  messageHandler({ type: 'firstParent', on: true });
+
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline && walks().length === before) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  const mainline = walks().pop() ?? '';
+  const flagged = posted.filter((m) => m.type === 'reset').pop()?.filtered;
+
+  console.log('\nfirst parent   :', mainline.includes('--first-parent') ? 'in the walk' : 'MISSING', '| reset says filtered:', flagged);
+
+  if (!mainline.includes('--first-parent')) {
+    problems.push('first parent was turned on but the walk did not ask git for it');
+  }
+
+  if (flagged !== true) {
+    problems.push('walking only the mainline was not counted as filtering');
+  }
+
+  const off = walks().length;
+  messageHandler({ type: 'firstParent', on: false });
+
+  const restore = Date.now() + 20_000;
+  while (Date.now() < restore && walks().length === off) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  if ((walks().pop() ?? '').includes('--first-parent')) {
+    problems.push('turning first parent off left it on the command line');
   }
 }
 

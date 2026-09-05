@@ -22,12 +22,15 @@
  */
 export const BODY_MARKUP = `<header id="header">
   <span id="title">Braid</span>
+  <span id="upstream" hidden></span>
   <span id="status">loading…</span>
   <button id="clear-filters" type="button" hidden
     title="Drop the search, the date range, and the branch and author filters in Source Control. The sort is left alone.">clear filters</button>
   <button id="clear-sort" type="button" hidden
     title="A sorted list is flat: the lanes only mean anything in the order git walked them. Click to go back.">graph order</button>
   <span id="search-box">
+    <button class="toggle" id="first-parent" type="button"
+      title="Walk only the first parent of every merge: the mainline, without the commits that were merged into it.">first parent</button>
     <select id="date-range" title="Limit the walk to a stretch of time. git compares the committer date, which the Date column does not show - identical for ordinary history, different for anything rebased.">
       <option value="">any time</option>
       <option value="today">today</option>

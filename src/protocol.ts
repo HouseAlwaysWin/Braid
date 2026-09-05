@@ -76,6 +76,13 @@ export type HostMessage =
       readonly conflicted: number;
       /** The branch the changes would land on, or null when HEAD is detached. */
       readonly branch: string | null;
+      /** Where that branch stands against the one it tracks, or null when it tracks nothing. */
+      readonly upstream: {
+        readonly ref: string;
+        readonly ahead: number;
+        readonly behind: number;
+        readonly gone: boolean;
+      } | null;
     }
   /** A fresh load is starting. `filtered` is whether anything is narrowing it, from any source. */
   | { readonly type: 'reset'; readonly filtered: boolean }
@@ -118,6 +125,7 @@ export type WebviewMessage =
       readonly type: 'ready';
       readonly search: Search | null;
       readonly dates: DateRange | null;
+      readonly firstParent: boolean;
     }
   | { readonly type: 'refresh' }
   /** Drop the search, the date range, and the sidebar's ref and author filters, all at once. */
@@ -125,6 +133,8 @@ export type WebviewMessage =
   | { readonly type: 'search'; readonly search: Search | null }
   /** Narrow the walk to a stretch of time. Separate from the search: the two combine. */
   | { readonly type: 'dates'; readonly range: DateRange | null }
+  /** Walk only the first parent of every merge: the mainline, without what was merged into it. */
+  | { readonly type: 'firstParent'; readonly on: boolean }
   | { readonly type: 'selectCommit'; readonly sha: string }
   /** The working-tree row was picked. It has no commit to load, only files to list. */
   | { readonly type: 'selectUncommitted' }

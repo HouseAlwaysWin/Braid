@@ -212,6 +212,48 @@ export function parseStatus(output: string): FileStatus[] {
   return files;
 }
 
+/** The working tree and where the branch stands - everything one `git status -b` already says. */
+export interface WorkingTree {
+  readonly files: FileStatus[];
+  readonly branch: string | null;
+  readonly upstream: Upstream | null;
+}
+
+/**
+ * The working tree alone, in one process where `readRepoState` costs six.
+ *
+ * This is what a file being saved needs re-read, and saving a file cannot move a ref - so asking
+ * for the branches, the tags and the remotes as well would be five processes spent on questions
+ * nobody asked, on an event that arrives every time an editor autosaves.
+ */
+export async function readWorkingTree(git: Git, repo: RepoInfo): Promise<WorkingTree> {
+  if (repo.isBare) {
+    return { files: [], branch: null, upstream: null };
+  }
+
+  const status = await git.runRead(repo.root, ['status', '--porcelain', '-z', '-b']);
+
+  return { files: parseStatus(status), branch: parseBranchName(status), upstream: parseBranchHeader(status) };
+}
+
+/**
+ * The local branch out of the `## ` header, or null when HEAD is detached.
+ *
+ * git spells a detached HEAD `## HEAD (no branch)`, which is a sentinel rather than a branch called
+ * HEAD - and a real branch cannot contain a space, so the two are told apart by that.
+ */
+export function parseBranchName(output: string): string | null {
+  const line = output.split('\x00').find((record) => record.startsWith('## '));
+
+  if (line === undefined) {
+    return null;
+  }
+
+  const name = line.slice(3).split('...')[0]?.trim() ?? '';
+
+  return name.length === 0 || name.includes(' ') ? null : name;
+}
+
 export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState> {
   const [operation, status, head, branch, refs, remotes] = await Promise.all([
     readOperation(repo.gitDir),

@@ -64,6 +64,7 @@ messages.push({
   untracked: state.files.filter((f) => f.untracked).length,
   conflicted: state.files.filter((f) => f.conflicted).length,
   branch: state.branch,
+  upstream: state.upstream,
 });
 
 messages.push({ type: 'done', total: loader.rowCount, elapsedMs: 0 });

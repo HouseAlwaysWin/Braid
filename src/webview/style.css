@@ -93,6 +93,35 @@ body {
   font-size: 0.9em;
 }
 
+/*
+ * Where the branch stands against the one it tracks. It is on screen only when there is something
+ * to act on - a branch in step with its upstream has nothing to say, and saying it anyway would
+ * make the two numbers that matter harder to notice when they do appear.
+ *
+ * The counts were already being read: `git status -b` carries them, and until now only push and
+ * pull looked at them.
+ */
+#upstream {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.ahead,
+.behind {
+  color: var(--braid-fg);
+}
+
+.gone {
+  color: var(--vscode-errorForeground);
+}
+
+#upstream[hidden] {
+  display: none;
+}
+
 #header.error #status {
   color: var(--vscode-errorForeground);
 }

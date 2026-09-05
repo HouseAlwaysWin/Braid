@@ -17,7 +17,10 @@ Working:
 - Virtualized rendering: a 20,000-row history keeps 31 row elements in the DOM
 - A row for the working tree when there is one, above the history and hanging off HEAD by a dashed
   line, with what is staged, unstaged and untracked. Click it and the same **Commit Files** section
-  lists them; click a file and the diff is HEAD against the file as it is on disk
+  lists them; click a file and the diff is HEAD against the file as it is on disk. It keeps up with
+  the tree as you save, without re-walking the history to do it
+- Where the branch stands against the one it tracks - `main ↑2 ↓1` beside the title, and only when
+  there is something to act on
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
   Files** section in Source Control, as a folded tree or a flat list
 - Click a file there to open it in VS Code's own diff editor, renames included
@@ -26,6 +29,8 @@ Working:
   only in the modes where git can honour it - and text is the default, so `v0.4.1` no longer
   quietly also matches `v0X4Y1`. Paste a hash instead and it selects that commit rather than
   grepping for it, and whatever matched is marked in the row
+- A **first parent** switch: walk the mainline and leave out what was merged into it, which also
+  takes the merge arcs with it rather than leaving them pointing at rows that are no longer there
 - A date filter beside the search: today, the last 7, 30 or 365 days, or a custom range. It narrows
   the walk like every other filter here, and combines with them - "what did Ada touch today" is one
   question. It compares git's committer date rather than the author date the column shows, which is
@@ -80,6 +85,13 @@ side effect that a commit's colour never changes once assigned.
 
 **Lanes are polylines that only turn.** A lane running straight for a thousand rows costs two
 points. Measured on a 100k-commit repository: 100,000 rows of graph, 7,998 points.
+
+**The working tree is watched by someone else.** `RepoWatcher` watches `.git`, which is where a ref
+moving shows up and is deliberately not where a file being saved does - watching a whole worktree
+means an event per keystroke of an editor's autosave. So the working-tree row listens to the
+built-in git extension instead, which is already running `git status` on its own debounce. What it
+triggers is one `git status`, not a reload: saving a file changes nothing a walk would produce
+differently, and re-walking would be paying for the whole graph to move one row's worth of text.
 
 **The working tree is a row, not a commit.** It is built in the view rather than sent by the host,
 and deliberately kept out of the lane layout: a lane point's Y *is* a commit's row index, so a row

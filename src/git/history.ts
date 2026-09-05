@@ -40,6 +40,14 @@ export interface HistoryOptions {
    * hundreds of refs on a command line when none of them are filtered out anyway.
    */
   readonly refs?: readonly string[] | null;
+  /**
+   * Walk only the first parent of every merge.
+   *
+   * Two halves of one thing: git is told to leave the merged-in commits out of the walk, and the
+   * layout is told not to draw the arcs to them - which would otherwise point at rows that are no
+   * longer there. Turning on only the drawing half would make a merge dot with nothing joining it,
+   * a graph that lies by leaving something out.
+   */
   readonly firstParentOnly?: boolean;
   /**
    * Stash commits to fold into the walk, keyed by SHA. Only the newest stash is a ref, so the rest
@@ -96,6 +104,7 @@ export class HistoryLoader {
       ...LOG_ARGS,
       ...(refs === null ? ['--all'] : refs),
       ...stashes.keys(),
+      ...(options.firstParentOnly === true ? ['--first-parent'] : []),
       `--max-count=${maxCommits}`,
       ...(options.filters ?? []),
     ];

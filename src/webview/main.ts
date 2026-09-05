@@ -18,6 +18,7 @@ import type { GraphDot, Point } from '../graph/model.ts';
 import { DotKind } from '../graph/model.ts';
 import type { CommitInfo } from '../protocol.ts';
 import type { DateRange } from '../git/dates.ts';
+import type { Upstream } from '../git/repoState.ts';
 import type { Search, SearchMode, SearchToggle } from '../git/search.ts';
 import { TOGGLES, looksLikeCommitId } from '../git/search.ts';
 import type { MenuItem, Target } from '../actions/registry.ts';
@@ -46,6 +47,8 @@ const statusEl = document.getElementById('status') as HTMLElement;
 const columnsEl = document.getElementById('columns') as HTMLElement;
 const clearSortEl = document.getElementById('clear-sort') as HTMLButtonElement;
 const clearFiltersEl = document.getElementById('clear-filters') as HTMLButtonElement;
+const upstreamEl = document.getElementById('upstream') as HTMLElement;
+const firstParentEl = document.getElementById('first-parent') as HTMLButtonElement;
 const viewport = document.getElementById('viewport') as HTMLElement;
 const spacer = document.getElementById('spacer') as HTMLElement;
 const rowsEl = document.getElementById('rows') as HTMLElement;
@@ -69,6 +72,7 @@ interface ViewState {
   readonly dateChoice?: string;
   readonly dateSince?: string;
   readonly dateUntil?: string;
+  readonly firstParent?: boolean;
 }
 
 /*
@@ -93,6 +97,7 @@ function saveViewState(): void {
     dateChoice: dateRange.value,
     dateSince: dateSince.value,
     dateUntil: dateUntil.value,
+    firstParent,
   } satisfies ViewState);
 }
 
@@ -111,6 +116,7 @@ function restoreViewState(): void {
     Object.assign(searchOptions, state.searchOptions);
   }
 
+  firstParent = state?.firstParent ?? false;
   searchInput.value = state?.query ?? '';
   searchMode.value = state?.mode ?? 'message';
   dateRange.value = state?.dateChoice ?? '';
@@ -155,6 +161,14 @@ let highlight: RegExp | null = null;
  * row for, which is the ordinary state of a repository nobody is halfway through editing.
  */
 let working = { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, branch: null as string | null };
+
+/**
+ * Walk only the mainline.
+ *
+ * A filter, for all that it is spelled as a walk option: it decides which commits are on screen, so
+ * it counts towards "something is narrowing this" and the button that drops everything drops it.
+ */
+let firstParent = false;
 
 /**
  * The HEAD commit's dot, kept as it arrives rather than searched for.
@@ -1035,6 +1049,7 @@ function reset(): void {
   complete = false;
   working = { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, branch: null };
   headDot = null;
+  upstreamEl.hidden = true;
   dots = [];
   paths.clear();
   graphWidth = 0;
@@ -1101,6 +1116,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         branch: message.branch,
       };
 
+      renderUpstream(message.upstream, message.branch);
       applyView();
       break;
 
@@ -1328,6 +1344,52 @@ searchMode.addEventListener('change', () => {
 });
 
 /**
+ * Where the branch stands against the one it tracks.
+ *
+ * Silent when it is in step: two numbers that are always on screen are two numbers nobody reads,
+ * and the whole value of these is being noticed on the day they are not zero.
+ */
+function renderUpstream(upstream: Upstream | null, branch: string | null): void {
+  if (upstream === null || branch === null || (upstream.ahead === 0 && upstream.behind === 0 && !upstream.gone)) {
+    upstreamEl.hidden = true;
+    return;
+  }
+
+  const parts: HTMLElement[] = [span('branch-name', branch)];
+
+  if (upstream.gone) {
+    // The ref's name is in the tooltip; on the line it would only push the branch out of sight.
+    parts.push(span('gone', 'upstream gone'));
+  } else {
+    if (upstream.ahead > 0) {
+      parts.push(span('ahead', `↑${upstream.ahead}`));
+    }
+
+    if (upstream.behind > 0) {
+      parts.push(span('behind', `↓${upstream.behind}`));
+    }
+  }
+
+  upstreamEl.replaceChildren(...parts);
+  upstreamEl.title = upstream.gone
+    ? `${branch} tracks ${upstream.ref}, which no longer exists on the remote.`
+    : `${branch} is ${upstream.ahead} ahead of and ${upstream.behind} behind ${upstream.ref}.`;
+
+  upstreamEl.hidden = false;
+}
+
+function updateFirstParent(): void {
+  firstParentEl.classList.toggle('on', firstParent);
+}
+
+firstParentEl.addEventListener('click', () => {
+  firstParent = !firstParent;
+  updateFirstParent();
+  saveViewState();
+  vscode.postMessage({ type: 'firstParent', on: firstParent });
+});
+
+/**
  * Put every control in this view back to "no filter", without asking for anything.
  *
  * Silent on purpose: this runs *because* the host has already dropped the filters and is reloading,
@@ -1348,6 +1410,8 @@ function clearFilterControls(): void {
   window.clearTimeout(searchTimer);
   sentSearch = 'null';
   sentDates = 'null';
+  firstParent = false;
+  updateFirstParent();
   updateSearchToggles();
   refreshHighlight();
   saveViewState();
@@ -1523,6 +1587,7 @@ restoreViewState();
 // sorting yet, and whichever column survived in the view state showing dimmed as what is queued.
 updateColumns();
 updateSearchToggles();
+updateFirstParent();
 refreshHighlight();
 
 // The filters go out with the handshake rather than as a second message, so the host walks the
@@ -1530,4 +1595,9 @@ refreshHighlight();
 sentSearch = JSON.stringify(currentSearch());
 sentDates = JSON.stringify(currentRange());
 
-vscode.postMessage({ type: 'ready', search: currentSearch(), dates: currentRange() });
+vscode.postMessage({
+  type: 'ready',
+  search: currentSearch(),
+  dates: currentRange(),
+  firstParent,
+});

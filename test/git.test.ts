@@ -7,6 +7,7 @@ import type { Search } from '../src/git/search.ts';
 import { SearchMode, TOGGLES, escapeBasicRegex, filterArgs, looksLikeCommitId, searchArgs } from '../src/git/search.ts';
 import { authorArgs } from '../src/git/authors.ts';
 import { dateArgs, isDay } from '../src/git/dates.ts';
+import { parseBranchName } from '../src/git/repoState.ts';
 
 const RS = '\x1e';
 const NUL = '\x00';
@@ -315,6 +316,16 @@ test('an author filter cannot end up behind a path search', () => {
   ]);
 
   assert.ok(args.indexOf('--') === args.length - 2, 'nothing may follow the pathspec but the path');
+});
+
+test('the branch header names the branch, and a detached HEAD is not a branch called HEAD', () => {
+  // git spells a detached HEAD `## HEAD (no branch)`. A real branch cannot contain a space, which
+  // is the only thing telling the sentinel apart from a branch that happens to be called HEAD.
+  assert.equal(parseBranchName('## main...origin/main [ahead 1]\x00'), 'main');
+  assert.equal(parseBranchName('## main\x00 M file.txt\x00'), 'main');
+  assert.equal(parseBranchName('## HEAD (no branch)\x00'), null);
+  assert.equal(parseBranchName('## feature/a-b...origin/feature/a-b\x00'), 'feature/a-b');
+  assert.equal(parseBranchName(' M file.txt\x00'), null);
 });
 
 test('commit ids are told apart from search text', () => {

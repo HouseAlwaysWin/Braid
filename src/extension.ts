@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { dirname } from 'node:path';
 
 import { Git } from './git/exec.ts';
 import type { RepoInfo } from './git/discovery.ts';
@@ -8,6 +9,7 @@ import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
 import { RefsProvider } from './refsView.ts';
 import { AuthorsProvider } from './authorsView.ts';
 import { FilesProvider, openFileDiff } from './filesView.ts';
+import { watchRepositories } from './git/vscodeGit.ts';
 
 let output: vscode.LogOutputChannel | undefined;
 
@@ -41,68 +43,44 @@ function candidateFolders(): string[] {
     }
   }
 
+  /*
+   * The folder holding the open file, not the file.
+   *
+   * `discover` runs git with this as its working directory, and a file is not a directory to run
+   * anything in - Node reports that as `spawn git ENOENT`, indistinguishable at a glance from git
+   * not being installed. It took the whole presence update down with it: the rejection was silent,
+   * so the context key the Source Control sections are gated on was never set and all three
+   * vanished - while the graph, opened later with no editor focused, worked perfectly.
+   */
   const active = vscode.window.activeTextEditor?.document.uri;
   if (active?.scheme === 'file') {
-    folders.unshift(active.fsPath);
+    folders.unshift(dirname(active.fsPath));
   }
 
   return [...new Set(folders)];
 }
 
-/** The first candidate folder that turns out to be a repository, or null if none are. */
+/**
+ * The first candidate folder that turns out to be a repository, or null if none are.
+ *
+ * A candidate that cannot even be looked at is a candidate that is not a repository. Letting one
+ * of them throw would abandon the folders behind it *and* whatever the caller was going to do with
+ * the answer, which is a great deal of damage for a path that was only ever a guess.
+ */
 async function findRepository(git: Git): Promise<RepoInfo | null> {
   for (const folder of candidateFolders()) {
-    const repo = await discover(git, folder);
+    try {
+      const repo = await discover(git, folder);
 
-    if (repo !== null) {
-      return repo;
+      if (repo !== null) {
+        return repo;
+      }
+    } catch (err) {
+      output?.debug(`not a usable folder: ${folder} (${err instanceof Error ? err.message : String(err)})`);
     }
   }
 
   return null;
-}
-
-/**
- * Call `onChange` when the built-in git extension opens or closes a repository.
- *
- * Braid's own discovery is a filesystem walk with nothing to subscribe to, so a repository that
- * appears after startup - a `git init`, or a clone into a folder that is already open - would
- * otherwise stay invisible until the window is reloaded, and the Source Control sections with it.
- *
- * As in candidateFolders, this API is convenience rather than load-bearing: a git extension that is
- * disabled or has moved its API costs one trigger, not the feature.
- */
-function watchGitRepositories(onChange: () => void): { dispose(): void } {
-  const subscriptions: { dispose(): void }[] = [];
-
-  void (async () => {
-    try {
-      const extension = vscode.extensions.getExtension<{
-        getAPI(version: number): {
-          onDidOpenRepository: vscode.Event<unknown>;
-          onDidCloseRepository: vscode.Event<unknown>;
-        };
-      }>('vscode.git');
-
-      if (extension === undefined) {
-        return;
-      }
-
-      const api = (extension.isActive ? extension.exports : await extension.activate()).getAPI(1);
-
-      subscriptions.push(api.onDidOpenRepository(onChange), api.onDidCloseRepository(onChange));
-    } catch {
-      // Nothing to unsubscribe from, and nothing else here depends on it.
-    }
-  })();
-
-  return {
-    dispose() {
-      for (const subscription of subscriptions) {
-        subscription.dispose();
-      }
-    },
-  };
 }
 
 /** Run an action that targets the repository, which needs a graph to run against. */
@@ -427,7 +405,7 @@ function start(context: vscode.ExtensionContext): void {
         schedulePresenceUpdate();
       }
     }),
-    watchGitRepositories(schedulePresenceUpdate),
+    watchRepositories(schedulePresenceUpdate),
     {
       dispose() {
         if (pending !== null) {
