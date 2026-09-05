@@ -187,8 +187,13 @@ function start(context: vscode.ExtensionContext): void {
     authors.attach(authorsView),
 
     // Either filter narrows the walk, so the graph is rebuilt rather than merely repainted.
-    refs.onDidChangeFilter(() => BraidPanel.active()?.refresh()),
-    authors.onDidChangeFilter(() => BraidPanel.active()?.refresh()),
+    /*
+     * Every open graph, not the focused one. Ticking a box in Source Control is itself the act of
+     * unfocusing the graph, so `active()` here was reliably null and the filter reliably did
+     * nothing - the one place where "the graph the user is looking at" is the wrong graph.
+     */
+    refs.onDidChangeFilter(() => BraidPanel.refreshAll()),
+    authors.onDidChangeFilter(() => BraidPanel.refreshAll()),
 
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, new RevisionContentProvider(git)),
 
@@ -218,6 +223,41 @@ function start(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('braid.showAllRefs', () => refs.showAll()),
+
+    vscode.commands.registerCommand('braid.showOnlyListedRefs', () => refs.showOnlyListed()),
+
+    /*
+     * The sidebar's own actions. They take the node the tree hands them rather than a name typed
+     * somewhere, so the full ref name travels with the target and `main` the branch can never be
+     * confused with `main` the tag.
+     */
+    vscode.commands.registerCommand('braid.showOnlyRef', (node: unknown) => {
+      const target = refs.targetOf(node);
+
+      if (target !== null) {
+        refs.showOnly(target.refName);
+      }
+    }),
+
+    vscode.commands.registerCommand('braid.checkoutRef', (node: unknown) => {
+      const target = refs.targetOf(node);
+
+      if (target === null) {
+        return;
+      }
+
+      const panel = BraidPanel.any();
+
+      if (panel === null) {
+        void vscode.window.showInformationMessage('Braid: open the graph first.');
+        return;
+      }
+
+      panel.runTargetAction(
+        target.refKind === 'remote' ? 'braid.checkoutRemoteBranch' : 'braid.checkoutBranch',
+        { kind: 'ref', ...target },
+      );
+    }),
 
     vscode.commands.registerCommand('braid.showAllAuthors', () => authors.showAll()),
 

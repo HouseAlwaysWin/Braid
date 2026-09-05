@@ -157,6 +157,42 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     this.query = query.trim();
     this.changed.fire(undefined);
     this.updateMessage();
+    this.publishFiltering();
+  }
+
+  /**
+   * Make the graph agree with the list: hide every ref the text filter does not match.
+   *
+   * The bridge between the two halves, and deliberately a gesture rather than a side effect of
+   * typing. The box stays what it is - a way to find a ref among two hundred - and this is the one
+   * click that says "and now show me only those", without the graph lurching about while a name is
+   * still being typed.
+   */
+  showOnlyListed(): void {
+    const listed = new Set(this.visible().map((ref) => ref.refName));
+    const before = this.hidden.size;
+
+    this.hidden.clear();
+
+    for (const ref of this.refs) {
+      if (!listed.has(ref.refName)) {
+        this.hidden.add(ref.refName);
+      }
+    }
+
+    if (before === this.hidden.size && before === 0) {
+      // Everything matched, so nothing changed and nothing is worth a re-walk for.
+      return;
+    }
+
+    this.changed.fire(undefined);
+    this.updateMessage();
+    this.filterChanged.fire();
+  }
+
+  /** Whether a text filter is on, so the button that applies it can be offered only then. */
+  private publishFiltering(): void {
+    void vscode.commands.executeCommand('setContext', 'braid.refsListFiltered', this.query.length > 0);
   }
 
   get filterText(): string {
@@ -273,26 +309,31 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
       return;
     }
 
-    // Two independent things, said in order: what is listed here, then what reaches the graph.
+    /*
+     * Two independent things, said in order: what is listed here, then what reaches the graph.
+     *
+     * The second half is not optional. With a text filter on, the refs deciding what the graph
+     * walks are the ones that are *not on screen* - filter twenty-four refs down to one and the
+     * other twenty-three are still ticked, still walked, and no longer anywhere you can see or
+     * reach them. A message that says only what is listed leaves the reader to conclude, quite
+     * reasonably, that they are looking at the filter itself.
+     */
+    const total = this.refs.length;
     const listing =
-      this.query.length === 0 ? '' : `Listing refs matching “${this.query}”. `;
+      this.query.length === 0
+        ? ''
+        : `Listing ${this.visible().length} of ${total} refs matching “${this.query}”. `;
 
-    this.view.message =
-      listing +
-      (this.hidden.size === 0
-        ? 'Untick a branch or tag to keep it out of the graph.'
-        : `${this.hidden.size} hidden — the graph shows the rest.`);
+    const graph =
+      this.hidden.size > 0
+        ? `${this.hidden.size} hidden — the graph shows the rest.`
+        : this.query.length === 0
+          ? 'Untick a branch or tag to keep it out of the graph.'
+          : `Nothing is unticked, so the graph still walks all ${total}.`;
+
+    this.view.message = listing + graph;
   }
 
-  /** Turn every ref back on. */
-  /**
-   * Put everything back: both the text filter and the unticked refs.
-   *
-   * Both, because the button says "show all" and there is no reading of that which leaves half the
-   * list hidden. They are still separate underneath - only the ticks change what the graph walks -
-   * so the reload is fired only when a tick actually changed. Clearing a list filter should not
-   * cost a re-walk of the history.
-   */
   /**
    * Clear the filter and repaint, without telling the graph.
    *
@@ -310,10 +351,61 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     this.query = '';
     this.changed.fire(undefined);
     this.updateMessage();
+    this.publishFiltering();
 
     return hadHidden;
   }
 
+  /**
+   * The action target a tree node stands for, or null for anything that is not a ref.
+   *
+   * The full ref name travels with it rather than the label, for the same reason the graph's own
+   * menu carries it: `main` the branch and `main` the tag are different things, and git picks one
+   * of them for you if all it is given is the short name.
+   */
+  targetOf(node: unknown): { refName: string; label: string; refKind: 'local' | 'remote' | 'tag' } | null {
+    const entry = node as Node | undefined;
+
+    if (entry?.kind !== 'ref') {
+      return null;
+    }
+
+    const refKind =
+      entry.group.id === 'remotes' ? 'remote' : entry.group.id === 'tags' ? 'tag' : 'local';
+
+    return { refName: entry.refName, label: entry.label, refKind };
+  }
+
+  /**
+   * Hide every ref but this one.
+   *
+   * Unticking is the wrong shape for "show me only this branch": what it narrows is the set of tips
+   * git walks *from*, so unticking one branch changes nothing when its commits are reachable from
+   * another - which for a branch that has been merged is always. Reaching the same place by hand
+   * means unticking everything else, one box at a time.
+   */
+  showOnly(refName: string): void {
+    this.hidden.clear();
+
+    for (const ref of this.refs) {
+      if (ref.refName !== refName) {
+        this.hidden.add(ref.refName);
+      }
+    }
+
+    this.changed.fire(undefined);
+    this.updateMessage();
+    this.filterChanged.fire();
+  }
+
+  /**
+   * Put everything back: both the text filter and the unticked refs.
+   *
+   * Both, because the button says "show all" and there is no reading of that which leaves half the
+   * list hidden. They stay separate underneath - only the ticks change what the graph walks - so
+   * the reload fires only when a tick actually changed. Clearing a list filter should not cost a
+   * re-walk of the history.
+   */
   showAll(): void {
     if (this.reset()) {
       this.filterChanged.fire();

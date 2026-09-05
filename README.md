@@ -51,6 +51,13 @@ Working:
 - Two filters in the Source Control sidebar: untick branches, remotes or tags to keep them out of
   the walk, and tick authors to show only theirs. Both narrow what `git log` walks rather than
   hiding rows
+- Right-click a branch there to check it out, or to **Show Only This** - unticking narrows the tips
+  git walks *from*, so hiding one branch changes nothing while its commits are still reachable from
+  another, which for a merged branch is always
+- The text filter over that list is a way to find a ref, not a way to filter the graph, and the
+  message under it says so with the numbers: `Listing 1 of 24 refs matching "claude/". Nothing is
+  unticked, so the graph still walks all 24.` One button applies the listing to the graph when that
+  is what you meant
 - A text filter for the branch list itself, for repositories with more refs than fit on screen
 - Each author gets their own colour, derived from the name so it never shifts as pages stream in
 - Fetch, pull and push, using whatever credential helper is already set up - Braid never asks for

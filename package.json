@@ -68,6 +68,22 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "braid.checkoutRef",
+        "title": "Checkout",
+        "category": "Braid"
+      },
+      {
+        "command": "braid.showOnlyRef",
+        "title": "Show Only This",
+        "category": "Braid"
+      },
+      {
+        "command": "braid.showOnlyListedRefs",
+        "title": "Show Only What Is Listed",
+        "category": "Braid",
+        "icon": "$(filter-filled)"
+      },
+      {
         "command": "braid.clearFilters",
         "title": "Clear All Filters",
         "category": "Braid",
@@ -128,6 +144,18 @@
           "when": "false"
         },
         {
+          "command": "braid.checkoutRef",
+          "when": "false"
+        },
+        {
+          "command": "braid.showOnlyRef",
+          "when": "false"
+        },
+        {
+          "command": "braid.showOnlyListedRefs",
+          "when": "braid.refsListFiltered"
+        },
+        {
           "command": "braid.refresh",
           "when": "braid.graphVisible"
         },
@@ -169,11 +197,33 @@
           "group": "navigation@3"
         }
       ],
+      "view/item/context": [
+        {
+          "command": "braid.checkoutRef",
+          "when": "view == braid.refs && viewItem == braidRef",
+          "group": "navigation@1"
+        },
+        {
+          "command": "braid.showOnlyRef",
+          "when": "view == braid.refs && viewItem == braidRef",
+          "group": "filter@1"
+        },
+        {
+          "command": "braid.showAllRefs",
+          "when": "view == braid.refs && viewItem == braidRef",
+          "group": "filter@2"
+        }
+      ],
       "view/title": [
         {
           "command": "braid.filterRefs",
           "when": "view == braid.refs",
           "group": "navigation@1"
+        },
+        {
+          "command": "braid.showOnlyListedRefs",
+          "when": "view == braid.refs && braid.refsListFiltered",
+          "group": "navigation@2"
         },
         {
           "command": "braid.showAllRefs",

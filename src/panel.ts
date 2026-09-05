@@ -119,6 +119,24 @@ export class BraidPanel {
     return BraidPanel.current;
   }
 
+  /**
+   * Reload every open graph.
+   *
+   * For anything driven from outside the webview, which is to say from the sidebar. `active()` is
+   * the *focused* graph, and clicking a checkbox in Source Control is precisely the act of taking
+   * focus away from it - so a filter that reloaded `active()` reloaded nothing at all, every time.
+   */
+  static refreshAll(): void {
+    for (const panel of BraidPanel.open.values()) {
+      panel.refresh();
+    }
+  }
+
+  /** Any open graph, for a sidebar action that needs one to run against. */
+  static any(): BraidPanel | null {
+    return BraidPanel.current ?? BraidPanel.open.values().next().value ?? null;
+  }
+
   private readonly panel: vscode.WebviewPanel;
   private readonly git: Git;
   private readonly repo: RepoInfo;
@@ -320,6 +338,11 @@ export class BraidPanel {
   /** Run an action that targets the repository rather than anything in the graph. */
   runRepoAction(id: string): void {
     void this.runAction(id, { kind: 'repo' });
+  }
+
+  /** Run an action against something the sidebar picked rather than something the graph did. */
+  runTargetAction(id: string, target: Target): void {
+    void this.runAction(id, target);
   }
 
   private async onMessage(message: WebviewMessage): Promise<void> {

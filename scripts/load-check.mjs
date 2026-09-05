@@ -72,6 +72,8 @@ const contentProviders = new Map();
 const diffsOpened = [];
 const contextKeys = new Map();
 let statusBarItem = null;
+let viewStateHandler = null;
+let panelObject = null;
 let quickPick = null;
 
 /** Drive the ref filter picker the way a user would: type, then accept. */
@@ -190,7 +192,7 @@ const vscodeStub = {
     },
     createWebviewPanel: (viewType, title) => {
       panelCreated = { viewType, title };
-      return {
+      return (panelObject = {
         active: true,
         webview: {
           cspSource: 'vscode-webview://stub',
@@ -210,11 +212,11 @@ const vscodeStub = {
             return { dispose() {} };
           },
         },
-        onDidChangeViewState: () => ({ dispose() {} }),
+        onDidChangeViewState: (fn) => { viewStateHandler = fn; return { dispose() {} }; },
         onDidDispose: () => ({ dispose() {} }),
         reveal() {},
         dispose() {},
-      };
+      });
     },
   },
   StatusBarAlignment: { Left: 1, Right: 2 },
@@ -857,6 +859,59 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 }
 
 {
+  const treeView = treeViews.get('braid.refs');
+
+  /*
+   * The message has to carry the half that is not on screen. Filtering the list leaves every ref
+   * that fell out of it still ticked and still walked - so a line naming only what is listed
+   * invites the reader to conclude they are looking at the filter itself, which on a repository
+   * with two dozen refs is exactly what happened.
+   */
+  /*
+   * `main` rather than `side`: in this fixture `side` is ahead of `main` and reaches every commit,
+   * so narrowing to it narrows nothing - a useless thing to assert a commit count against.
+   */
+  await typeIntoRefFilter('main');
+  const narrowed = treeView?.message ?? '';
+
+  console.log('  says         :', JSON.stringify(narrowed));
+
+  if (!narrowed.includes('of 2 refs')) {
+    problems.push(`the message does not say how many refs it is listing: ${narrowed}`);
+  }
+
+  if (!narrowed.includes('still walks all 2')) {
+    problems.push(`the message does not say the unlisted refs are still walked: ${narrowed}`);
+  }
+
+  // And the one click that makes the graph agree with the list.
+  const applyFrom = posted.filter((m) => m.type === 'done').length;
+  await commands.get('braid.showOnlyListedRefs')();
+
+  const applyBy = Date.now() + 20_000;
+  while (Date.now() < applyBy && posted.filter((m) => m.type === 'done').length === applyFrom) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  const applied = posted.filter((m) => m.type === 'done').pop()?.total ?? -1;
+  const baseline = posted.filter((m) => m.type === 'done')[0]?.total ?? 0;
+
+  console.log('  applied      :', applied, 'commits from the one ref that was listed');
+
+  if (applied < 0) {
+    problems.push('applying the list filter to the graph reloaded nothing');
+  }
+
+  if (applied >= baseline && baseline > 0) {
+    problems.push(`applying the list filter left ${applied} of ${baseline} commits`);
+  }
+
+  await commands.get('braid.showAllRefs')();
+  await new Promise((r) => setTimeout(r, 500));
+
+}
+
+{
   const authorsProvider = treeProviders.get('braid.authors');
   const authorsHandler = checkboxHandlers.get('braid.authors');
 
@@ -1032,6 +1087,106 @@ if (watchTest) {
     problems.push('writing an untracked file triggered a needless reload');
   } else {
     console.log('quiet churn    : ignored, as it should be');
+  }
+}
+
+/*
+ * The sidebar drives the graph from outside it, which is the case the rest of this run cannot see:
+ * everything here happens *because* the graph lost focus, and a stub panel that is focused forever
+ * is the one state where the bug this covers does not appear.
+ *
+ * It reloaded `BraidPanel.active()` - the *focused* graph - so ticking a box in Source Control,
+ * which is itself the act of unfocusing the graph, reloaded nothing at all.
+ */
+{
+  const refsProvider = treeProviders.get('braid.refs');
+  const refsHandler = checkboxHandlers.get('braid.refs');
+  const baseline = posted.filter((m) => m.type === 'done').pop()?.total ?? 0;
+
+  // The graph is no longer the focused editor, exactly as it is not when a sidebar is being used.
+  if (panelObject !== null && viewStateHandler !== null) {
+    panelObject.active = false;
+    viewStateHandler();
+  }
+
+  const settle = async (from) => {
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && posted.filter((m) => m.type === 'done').length <= from) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return posted.filter((m) => m.type === 'done').pop()?.total ?? -1;
+  };
+
+  const groups = refsProvider.getChildren();
+  const locals = refsProvider.getChildren(groups.find((g) => g.id === 'heads'));
+  const side = locals.find((ref) => ref.label !== 'main') ?? locals[0];
+
+  const from = posted.filter((m) => m.type === 'done').length;
+  refsHandler({ items: [[side, 0]] });
+  const unticked = await settle(from);
+
+  console.log('\nunfocused graph:', unticked, 'of', baseline, 'after unticking', side.label);
+
+  if (unticked === -1) {
+    problems.push('unticking a ref while the graph was unfocused reloaded nothing');
+  }
+
+  if (unticked >= baseline) {
+    problems.push(`unticking ${side.label} left ${unticked} of ${baseline} commits`);
+  }
+
+  await commands.get('braid.showAllRefs')();
+  await settle(posted.filter((m) => m.type === 'done').length - 1);
+
+  /*
+   * And "show me only this branch", which unticking cannot express: what it narrows is the set of
+   * tips git walks *from*, so hiding one branch changes nothing while its commits are still
+   * reachable from another - which for a branch that has been merged is always.
+   */
+  /*
+   * `main` rather than `side`: in this fixture `side` is ahead of `main` and reaches every commit,
+   * so narrowing to it narrows nothing - which is the very thing that makes unticking the wrong
+   * shape for this question, and a useless assertion to hang a test on.
+   */
+  const trunk = locals.find((ref) => ref.label === 'main') ?? side;
+  const onlyFrom = posted.filter((m) => m.type === 'done').length;
+
+  await commands.get('braid.showOnlyRef')(trunk);
+  const only = await settle(onlyFrom);
+
+  const shown = refsProvider
+    .getChildren()
+    .flatMap((g) => refsProvider.getChildren(g))
+    .filter((ref) => refsProvider.getTreeItem(ref).checkboxState === 1);
+
+  console.log(
+    'show only      :',
+    trunk.label,
+    '->',
+    only,
+    'of',
+    baseline,
+    'commits |',
+    shown.length,
+    'ref ticked:',
+    shown.map((r) => r.label).join(', '),
+  );
+
+  if (shown.length !== 1 || shown[0]?.refName !== trunk.refName) {
+    problems.push(`Show Only This left ${shown.length} refs ticked, expected just ${trunk.label}`);
+  }
+
+  if (only >= baseline) {
+    problems.push(`showing only ${trunk.label} left ${only} of ${baseline} commits`);
+  }
+
+  await commands.get('braid.showAllRefs')();
+  await settle(posted.filter((m) => m.type === 'done').length - 1);
+
+  // Put the focus back, so nothing after this is measuring a different window than it thinks.
+  if (panelObject !== null && viewStateHandler !== null) {
+    panelObject.active = true;
+    viewStateHandler();
   }
 }
 
