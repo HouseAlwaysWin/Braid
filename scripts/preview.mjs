@@ -65,6 +65,7 @@ messages.push({
   conflicted: state.files.filter((f) => f.conflicted).length,
   branch: state.branch,
   upstream: state.upstream,
+  fetchedAt: state.fetchedAt,
 });
 
 messages.push({ type: 'done', total: loader.rowCount, elapsedMs: 0 });

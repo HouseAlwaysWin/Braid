@@ -162,6 +162,13 @@ let highlight: RegExp | null = null;
  */
 let working = { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, branch: null as string | null };
 
+/** The last thing the host said about the remote, kept so the age beside it can keep counting. */
+let remote: { upstream: Upstream | null; branch: string | null; fetchedAt: number | null } = {
+  upstream: null,
+  branch: null,
+  fetchedAt: null,
+};
+
 /**
  * Walk only the mainline.
  *
@@ -1049,6 +1056,7 @@ function reset(): void {
   complete = false;
   working = { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, branch: null };
   headDot = null;
+  remote = { upstream: null, branch: null, fetchedAt: null };
   upstreamEl.hidden = true;
   dots = [];
   paths.clear();
@@ -1116,7 +1124,8 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
         branch: message.branch,
       };
 
-      renderUpstream(message.upstream, message.branch);
+      remote = { upstream: message.upstream, branch: message.branch, fetchedAt: message.fetchedAt };
+      renderRemote();
       applyView();
       break;
 
@@ -1343,24 +1352,50 @@ searchMode.addEventListener('change', () => {
   }
 });
 
+/** `3h`, `12m`, `just now` - short enough to sit next to two numbers without becoming a sentence. */
+function ago(since: number): string {
+  const minutes = Math.floor((Date.now() - since) / 60_000);
+
+  if (minutes < 1) {
+    return 'just now';
+  }
+
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
+}
+
 /**
- * Where the branch stands against the one it tracks.
+ * Where the branch stands against the one it tracks, and how old that answer is.
  *
- * Silent when it is in step: two numbers that are always on screen are two numbers nobody reads,
- * and the whole value of these is being noticed on the day they are not zero.
+ * The age is not decoration. `origin/main` is a local pointer that only a fetch moves, so every
+ * count here is a statement about the last fetch rather than about now - `↓0` after three hours
+ * offline means "nothing had arrived three hours ago", and read without the timestamp it means
+ * "you are up to date". That is the whole way a graph misleads about a remote, and it is why this
+ * stays on screen when the counts are zero: the zero is the number most likely to be believed.
  */
-function renderUpstream(upstream: Upstream | null, branch: string | null): void {
-  if (upstream === null || branch === null || (upstream.ahead === 0 && upstream.behind === 0 && !upstream.gone)) {
+function renderRemote(): void {
+  const { upstream, branch, fetchedAt } = remote;
+
+  if (upstream === null && fetchedAt === null) {
     upstreamEl.hidden = true;
     return;
   }
 
-  const parts: HTMLElement[] = [span('branch-name', branch)];
+  const parts: HTMLElement[] = [];
 
-  if (upstream.gone) {
+  if (branch !== null) {
+    parts.push(span('branch-name', branch));
+  }
+
+  if (upstream?.gone === true) {
     // The ref's name is in the tooltip; on the line it would only push the branch out of sight.
     parts.push(span('gone', 'upstream gone'));
-  } else {
+  } else if (upstream !== null) {
     if (upstream.ahead > 0) {
       parts.push(span('ahead', `↑${upstream.ahead}`));
     }
@@ -1370,13 +1405,32 @@ function renderUpstream(upstream: Upstream | null, branch: string | null): void 
     }
   }
 
+  parts.push(span('fetched', fetchedAt === null ? 'never fetched' : `fetched ${ago(fetchedAt)}`));
+
   upstreamEl.replaceChildren(...parts);
-  upstreamEl.title = upstream.gone
-    ? `${branch} tracks ${upstream.ref}, which no longer exists on the remote.`
-    : `${branch} is ${upstream.ahead} ahead of and ${upstream.behind} behind ${upstream.ref}.`;
+
+  const standing =
+    upstream === null
+      ? 'This branch tracks nothing.'
+      : upstream.gone
+        ? `${branch ?? 'HEAD'} tracks ${upstream.ref}, which no longer exists on the remote.`
+        : `${branch ?? 'HEAD'} is ${upstream.ahead} ahead of and ${upstream.behind} behind ${upstream.ref}.`;
+
+  upstreamEl.title =
+    fetchedAt === null
+      ? `${standing}\n\nNothing has been fetched yet, so the remote's position is unknown.`
+      : `${standing}\n\nTrue as of the last fetch, ${ago(fetchedAt)}. A remote-tracking ref only moves when something fetches.`;
 
   upstreamEl.hidden = false;
 }
+
+// The age has to keep counting on its own: with no fetch and no reload, nothing else would ever
+// come along to correct "just now" into the hour it has since become.
+window.setInterval(() => {
+  if (!upstreamEl.hidden) {
+    renderRemote();
+  }
+}, 30_000);
 
 function updateFirstParent(): void {
   firstParentEl.classList.toggle('on', firstParent);

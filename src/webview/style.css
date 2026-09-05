@@ -118,6 +118,11 @@ body {
   color: var(--vscode-errorForeground);
 }
 
+/* Quieter than the counts it qualifies, but never absent: it is what makes them mean anything. */
+.fetched {
+  opacity: 0.75;
+}
+
 #upstream[hidden] {
   display: none;
 }

@@ -1312,6 +1312,15 @@ if (watchTest) {
 
   const state = posted.filter((m) => m.type === 'working').pop();
 
+  /*
+   * The counts beside the title are a statement about the last fetch, not about now - `origin/main`
+   * is a local pointer only a fetch moves. Without the timestamp travelling with them they read as
+   * current, which is exactly how a graph tells you that you are up to date when you are not.
+   */
+  if (state !== undefined && !('fetchedAt' in state)) {
+    problems.push('the working message does not say when the remote was last heard from');
+  }
+
   console.log(
     '\nworking tree   :',
     state === undefined

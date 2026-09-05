@@ -83,6 +83,13 @@ export type HostMessage =
         readonly behind: number;
         readonly gone: boolean;
       } | null;
+      /**
+       * When a remote was last heard from, as epoch milliseconds.
+       *
+       * The counts above are a statement about that moment rather than about now, and without it
+       * beside them they read as current - which is the whole way a stale graph misleads.
+       */
+      readonly fetchedAt: number | null;
     }
   /** A fresh load is starting. `filtered` is whether anything is narrowing it, from any source. */
   | { readonly type: 'reset'; readonly filtered: boolean }

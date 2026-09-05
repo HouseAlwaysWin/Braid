@@ -155,6 +155,7 @@ export class BraidPanel {
    * `git status` - the state was read a moment ago for the in-progress banner anyway.
    */
   private working: FileStatus[] = [];
+  private fetchTimer: NodeJS.Timeout | null = null;
   /** Walk only the mainline. A filter like any other: it decides which commits are on screen. */
   private firstParent = false;
   private readonly filters: FilterSource;
@@ -267,6 +268,15 @@ export class BraidPanel {
       .get<number>('refreshDebounceMs', 600);
 
     this.watcher = new RepoWatcher(repo, () => void this.onRepositoryChanged(), debounce);
+    this.startAutoFetch();
+
+    this.disposables.push(
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration('braid.autoFetchMinutes')) {
+          this.startAutoFetch();
+        }
+      }),
+    );
 
     // The watcher sees `.git`, which is where refs move and is not where a file being saved shows
     // up. The working-tree row would otherwise sit stale until something else caused a reload.
@@ -616,6 +626,7 @@ export class BraidPanel {
       conflicted: tree.files.filter((file) => file.conflicted).length,
       branch: tree.branch,
       upstream: tree.upstream,
+      fetchedAt: tree.fetchedAt,
     });
   }
 
@@ -781,8 +792,65 @@ ${BODY_MARKUP}
 </html>`;
   }
 
+  /**
+   * Fetch on a timer, if asked to.
+   *
+   * Off by default, and deliberately: fetching is the one thing here that leaves the machine, and
+   * doing it unasked is a decision for the person whose network it is. VS Code's own `git.autofetch`
+   * does the same job, and Braid picks up whatever it does - the watcher sees the refs move.
+   */
+  private startAutoFetch(): void {
+    if (this.fetchTimer !== null) {
+      clearInterval(this.fetchTimer);
+      this.fetchTimer = null;
+    }
+
+    const minutes = vscode.workspace
+      .getConfiguration('braid')
+      .get<number>('autoFetchMinutes', 0);
+
+    if (minutes <= 0) {
+      return;
+    }
+
+    this.fetchTimer = setInterval(() => void this.autoFetch(), minutes * 60_000);
+  }
+
+  /**
+   * One quiet fetch.
+   *
+   * Quiet in both directions: no progress notification, because nobody asked for this one; and no
+   * error popup, because every reason a background fetch fails - offline, a VPN, a credential
+   * helper that has forgotten - is something the user finds out the moment they ask for one
+   * themselves. `GIT_TERMINAL_PROMPT=0` is set for every command Braid runs, so the worst case is
+   * a failure rather than a child process waiting forever on a password nobody can type.
+   */
+  private async autoFetch(): Promise<void> {
+    if (BraidPanel.lock.isBusy(this.repo.root) || this.loading !== null) {
+      return;
+    }
+
+    try {
+      await this.git.runNetwork(this.repo.root, ['fetch', '--all', '--prune', '--quiet']);
+    } catch (err) {
+      output?.warn(`auto-fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    /*
+     * Refs that moved wake the watcher, which reloads on its own. Refs that did not still need this:
+     * the fetch itself is news, because it is what the ahead/behind counts are true as of.
+     */
+    await this.refreshWorking();
+  }
+
   private dispose(): void {
     this.loading?.abort();
+
+    if (this.fetchTimer !== null) {
+      clearInterval(this.fetchTimer);
+      this.fetchTimer = null;
+    }
+
     this.detailsLoading?.abort();
     this.watcher.dispose();
     BraidPanel.open.delete(this.repo.root);

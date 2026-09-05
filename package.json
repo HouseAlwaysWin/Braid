@@ -295,6 +295,13 @@
           "maximum": 3600,
           "markdownDescription": "Give up on a fetch, pull or push after this many seconds with **no output at all**. This is idle time, not total time, so a slow but live transfer is never cut off. `0` waits forever."
         },
+        "braid.autoFetchMinutes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 1440,
+          "markdownDescription": "Fetch from every remote this often, in minutes. `0` never fetches on its own.\n\nA remote-tracking ref like `origin/main` only moves when something fetches, so the graph - and the ahead/behind counts beside the title - are only ever as current as the last fetch. Braid picks up whatever moves them, including VS Code's own `#git.autofetch#`, so turn this on only if you would rather Braid did it."
+        },
         "braid.statusBar.enabled": {
           "type": "boolean",
           "default": true,

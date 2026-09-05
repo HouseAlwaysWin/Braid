@@ -13,7 +13,7 @@
  * "are you sure?" without a list is not a warning, it is a shrug.
  */
 
-import { access } from 'node:fs/promises';
+import { access, stat } from 'node:fs/promises';
 
 import type { Git } from './exec.ts';
 import type { RepoInfo } from './discovery.ts';
@@ -64,6 +64,8 @@ export interface RepoState {
   readonly remotes: string[];
   /** null when the branch tracks nothing, HEAD is detached, or the repository is bare. */
   readonly upstream: Upstream | null;
+  /** When a remote was last heard from, which is what the ahead/behind counts are true as of. */
+  readonly fetchedAt: number | null;
 }
 
 /**
@@ -217,6 +219,27 @@ export interface WorkingTree {
   readonly files: FileStatus[];
   readonly branch: string | null;
   readonly upstream: Upstream | null;
+  /** When a remote was last heard from, as epoch milliseconds, or null if it never has been. */
+  readonly fetchedAt: number | null;
+}
+
+/**
+ * When this repository last fetched.
+ *
+ * Every ahead/behind count is a statement about the moment of the last fetch and not about now:
+ * `origin/main` is a local pointer that only a fetch moves, so "0 behind" means "0 behind as of
+ * then". Without a timestamp beside them the numbers read as current and are believed.
+ *
+ * `FETCH_HEAD` is rewritten by every fetch, successful or not, so its mtime is the answer without
+ * asking git anything. It lives in the common dir, which for a linked worktree is not its own.
+ */
+export async function lastFetch(repo: RepoInfo): Promise<number | null> {
+  try {
+    return (await stat(`${repo.commonDir}/FETCH_HEAD`)).mtimeMs;
+  } catch {
+    // Never fetched, or a repository with no remote at all.
+    return null;
+  }
 }
 
 /**
@@ -228,12 +251,21 @@ export interface WorkingTree {
  */
 export async function readWorkingTree(git: Git, repo: RepoInfo): Promise<WorkingTree> {
   if (repo.isBare) {
-    return { files: [], branch: null, upstream: null };
+    // Bare: no working tree to be dirty, but it can still have fetched.
+    return { files: [], branch: null, upstream: null, fetchedAt: await lastFetch(repo) };
   }
 
-  const status = await git.runRead(repo.root, ['status', '--porcelain', '-z', '-b']);
+  const [status, fetchedAt] = await Promise.all([
+    git.runRead(repo.root, ['status', '--porcelain', '-z', '-b']),
+    lastFetch(repo),
+  ]);
 
-  return { files: parseStatus(status), branch: parseBranchName(status), upstream: parseBranchHeader(status) };
+  return {
+    files: parseStatus(status),
+    branch: parseBranchName(status),
+    upstream: parseBranchHeader(status),
+    fetchedAt,
+  };
 }
 
 /**
@@ -255,7 +287,7 @@ export function parseBranchName(output: string): string | null {
 }
 
 export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState> {
-  const [operation, status, head, branch, refs, remotes] = await Promise.all([
+  const [operation, status, head, branch, refs, remotes, fetchedAt] = await Promise.all([
     readOperation(repo.gitDir),
     // A bare repository has no working tree, so there is nothing to be dirty. `-b` costs nothing
     // and carries the upstream and the ahead/behind counts, which network actions need.
@@ -265,6 +297,7 @@ export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState
     git.runRead(repo.root, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => ''),
     git.runRead(repo.root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/tags']),
     git.runRead(repo.root, ['remote']).catch(() => ''),
+    lastFetch(repo),
   ]);
 
   const names = refs
@@ -285,6 +318,7 @@ export async function readRepoState(git: Git, repo: RepoInfo): Promise<RepoState
     tags: names.filter((r) => r.startsWith('refs/tags/')).map((r) => r.slice('refs/tags/'.length)),
     remotes: remotes.split('\n').map((line) => line.trim()).filter((line) => line.length > 0),
     upstream: parseBranchHeader(status),
+    fetchedAt,
   };
 }
 

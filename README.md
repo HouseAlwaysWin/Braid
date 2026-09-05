@@ -19,8 +19,10 @@ Working:
   line, with what is staged, unstaged and untracked. Click it and the same **Commit Files** section
   lists them; click a file and the diff is HEAD against the file as it is on disk. It keeps up with
   the tree as you save, without re-walking the history to do it
-- Where the branch stands against the one it tracks - `main ↑2 ↓1` beside the title, and only when
-  there is something to act on
+- Where the branch stands against the one it tracks, and how old that answer is:
+  `main ↑2 ↓1 fetched 3h ago` beside the title. The age is not decoration - see the design note
+- Fetch on a timer if you want one (`braid.autoFetchMinutes`, off by default). Braid also picks up
+  fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
   Files** section in Source Control, as a folded tree or a flat list
 - Click a file there to open it in VS Code's own diff editor, renames included
@@ -92,6 +94,17 @@ side effect that a commit's colour never changes once assigned.
 
 **Lanes are polylines that only turn.** A lane running straight for a thousand rows costs two
 points. Measured on a 100k-commit repository: 100,000 rows of graph, 7,998 points.
+
+**A remote-tracking ref is a local pointer.** `origin/main` moves when something fetches and at no
+other time, so every ahead/behind count is a statement about the last fetch rather than about now.
+Three hours offline and `↓0` still means "nothing had arrived three hours ago" - which read without
+a timestamp means "you are up to date", and that is the whole way a graph misleads about a remote.
+So the age travels with the counts and stays on screen when they are zero, because zero is the
+number most likely to be believed. `FETCH_HEAD`'s mtime is the answer, and costs one `stat`.
+
+Acting on those counts is a separate problem, and solved separately: pull fetches the whole remote
+first and then *re-reads* the counts before deciding anything, because the ones it was given are
+stale by definition.
 
 **The working tree is watched by someone else.** `RepoWatcher` watches `.git`, which is where a ref
 moving shows up and is deliberately not where a file being saved does - watching a whole worktree
