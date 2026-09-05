@@ -149,6 +149,14 @@ function start(context: vscode.ExtensionContext): void {
   const refsView = vscode.window.createTreeView('braid.refs', {
     treeDataProvider: refs,
     showCollapseAll: true,
+
+    /*
+     * Braid owns the checkboxes, because VS Code and Braid disagree about what a group's tick
+     * means. Braid says "some of these are shown"; VS Code reads a ticked parent as "every child is
+     * ticked" and drives them all back on - so unticking one branch put the tick straight back,
+     * because the group it lives in still had others showing.
+     */
+    manageCheckboxStateManually: true,
   });
 
   const authors = new AuthorsProvider(git);

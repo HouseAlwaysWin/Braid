@@ -111,6 +111,12 @@ a file list is narrow and tall. Ten files in a 200px strip under a 20,000-row hi
 shape for both, so the list is a tree view now - which also means folding, status colours and
 one-click opening come from VS Code rather than from three hundred lines of webview.
 
+**The checkboxes are Braid's, not VS Code's.** A tree view manages checkbox state itself unless
+told otherwise, and what it means by a ticked parent is "every child is ticked" - which it will
+enforce at the next render. Braid means something else by a ticked group: "some of these are
+showing". The two disagreeing looked like unticking a branch putting its own tick straight back on,
+and the fix is one flag saying who owns them.
+
 **git's date flags need spelling out.** A bare `--since=2026-07-24` is not midnight: approxidate
 fills the unspecified fields from the current clock, so run at 20:08 it means that evening - and
 answers differently an hour later. Measured, it returned one commit from a day that held twelve.

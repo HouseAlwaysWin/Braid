@@ -76,6 +76,33 @@ let viewStateHandler = null;
 let panelObject = null;
 let quickPick = null;
 
+/**
+ * What VS Code does to checkboxes when the extension has not claimed them.
+ *
+ * Unless `manageCheckboxStateManually` is set, the tree view owns checkbox state and reads a ticked
+ * parent as "every child is ticked", driving them all back on at the next render. A stub that never
+ * did this is a stub in a state real VS Code is never in - and it is how a provider that reports a
+ * group as ticked whenever *any* of its refs are showing passed here while putting the tick
+ * straight back on screen.
+ */
+function propagateCheckboxes(id) {
+  const provider = treeProviders.get(id);
+  const handler = checkboxHandlers.get(id);
+
+  if (provider === undefined || handler === undefined || treeViewOptions.get(id)?.manageCheckboxStateManually === true) {
+    return;
+  }
+
+  for (const parent of provider.getChildren()) {
+    const children = provider.getChildren(parent);
+
+    if (children.length > 0) {
+      const state = provider.getTreeItem(parent).checkboxState;
+      handler({ items: children.map((child) => [child, state]) });
+    }
+  }
+}
+
 /** Drive the ref filter picker the way a user would: type, then accept. */
 async function typeIntoRefFilter(text) {
   await commands.get('braid.filterRefs')();
@@ -84,6 +111,7 @@ async function typeIntoRefFilter(text) {
   quickPick.handlers.accept?.();
 }
 const treeProviders = new Map();
+const treeViewOptions = new Map();
 const checkboxHandlers = new Map();
 const treeViews = new Map();
 
@@ -170,6 +198,7 @@ const vscodeStub = {
       // A stale manifest, on demand: see the self-test below for what this is proving.
       if (breakView === id) throw new Error(`No view is registered with id: ${id}`);
       treeProviders.set(id, options.treeDataProvider);
+      treeViewOptions.set(id, options);
       const view = {
         message: undefined,
         onDidChangeCheckboxState: (fn) => { checkboxHandlers.set(id, fn); return { dispose() {} }; },
@@ -855,6 +884,36 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 
   if (posted.filter((m) => m.type === 'done').length !== reloadsBefore) {
     problems.push('clearing a text-only filter reloaded the graph for nothing');
+  }
+}
+
+{
+  const treeProvider = treeProviders.get('braid.refs');
+  const checkboxHandler = checkboxHandlers.get('braid.refs');
+
+  /*
+   * A tick has to survive the render that follows it. Braid marks a group as ticked whenever any of
+   * its refs are showing, which is not what VS Code means by a ticked parent - so with the
+   * checkboxes left in VS Code's hands, unticking one branch was undone before it was seen.
+   */
+  {
+    const groups = treeProvider.getChildren();
+    const locals = treeProvider.getChildren(groups.find((g) => g.id === 'heads'));
+    const victim = locals.find((ref) => ref.label !== 'main') ?? locals[0];
+
+    checkboxHandler({ items: [[victim, 0]] });
+    propagateCheckboxes('braid.refs');
+
+    const stillOff = treeProvider.getTreeItem(victim).checkboxState === 0;
+
+    console.log('  tick sticks  :', victim.label, stillOff ? 'stayed unticked' : 'WAS TICKED BACK ON');
+
+    if (!stillOff) {
+      problems.push(`unticking ${victim.label} did not stick: the group's own tick put it back`);
+    }
+
+    await commands.get('braid.showAllRefs')();
+    await new Promise((r) => setTimeout(r, 500));
   }
 }
 
