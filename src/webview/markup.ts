@@ -109,6 +109,7 @@ export const BODY_MARKUP = `<header id="header">
   <button class="col" type="button" data-sort="author">Author<span class="sort-arrow"></span></button>
   <button class="col" type="button" data-sort="date">Date<span class="sort-arrow"></span></button>
   <button class="col" type="button" data-sort="sha">Commit<span class="sort-arrow"></span></button>
+  <span class="col-grip" data-grip="graph" title="Drag to give the lanes more or less room. Double-click to let them take what they need, up to a third of the panel."></span>
   <span class="col-grip" data-grip="author" title="Drag to resize Author. Double-click to reset it."></span>
   <span class="col-grip" data-grip="date" title="Drag to resize Date. Double-click to reset it."></span>
   <span class="col-grip" data-grip="sha" title="Drag to resize Commit. Double-click to reset it."></span>

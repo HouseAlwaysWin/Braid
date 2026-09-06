@@ -105,6 +105,11 @@ Working:
 - Fetch, pull and push, using whatever credential helper is already set up - Weft never asks for
   a password and never stores one. Pull asks whether to merge or rebase only when the histories
   have actually diverged, and force push is `--force-with-lease` after a fetch, never `--force`
+- The lanes get at most a third of the panel until you say otherwise, and a grip of their own to say
+  it with. A history with thirty concurrent branches wants three hundred and sixty pixels of graph,
+  which on a side panel is the whole width - and the subject column, which is what people came to
+  read, becomes `feat(s…`. Given less room the lanes are drawn closer together rather than cut off:
+  a graph missing its right-hand branches is a graph lying about the history
 - Drag the line between two column headings to resize a column, double-click it to put the width
   back, and right-click the headings to switch Author, Date or Commit off. Description stays: it is
   the `1fr` the others leave their space to, and the column people came to read. All of it is

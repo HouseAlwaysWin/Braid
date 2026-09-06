@@ -87,6 +87,8 @@ interface ViewState {
   readonly branchGroupsClosed?: readonly string[];
   /** Column widths in pixels and which are switched off. Absent width means the default. */
   readonly columns?: Record<string, { readonly width?: number; readonly hidden?: boolean }>;
+  /** How much room the lanes were dragged to. Absent means the default ceiling. */
+  readonly graphColumn?: number;
 }
 
 /*
@@ -117,6 +119,7 @@ function saveViewState(): void {
     columns: Object.fromEntries(
       FIXED_COLUMNS.map((column) => [column.key, { ...columnState[column.key] }]),
     ),
+    ...(graphColumn === null ? {} : { graphColumn }),
   } satisfies ViewState);
 }
 
@@ -136,6 +139,7 @@ function restoreViewState(): void {
   }
 
   branchGroupsClosed = new Set(state?.branchGroupsClosed ?? []);
+  graphColumn = typeof state?.graphColumn === 'number' ? state.graphColumn : null;
 
   for (const column of FIXED_COLUMNS) {
     const saved = state?.columns?.[column.key];
@@ -170,7 +174,21 @@ function restoreViewState(): void {
 let columnGeometry = '';
 
 let rowHeight = 24;
+/** What the layout needs to draw every lane at its natural 12px spacing. */
 let graphWidth = 0;
+
+/**
+ * What the lanes are actually given, which is not always what they asked for.
+ *
+ * A repository with thirty concurrent branches wants three hundred and sixty pixels of lanes, and
+ * on a side panel that is the whole width - the subjects end up as `feat(s…`, which is the column
+ * people came to read. So the graph is capped by default and can be dragged, and when it has less
+ * room than it wanted the lanes are drawn closer together rather than cut off: a graph missing its
+ * right-hand branches is a graph that is lying about the history.
+ *
+ * null means "whatever the lanes need, up to the cap" - the state it is in until somebody drags.
+ */
+let graphColumn: number | null = null;
 
 /**
  * The history in git's order - the order the lanes were laid out in, and the order `paths` and
@@ -313,10 +331,35 @@ function rowOffset(): number {
   return view.length - rows.length;
 }
 
+/**
+ * How much room the lanes get.
+ *
+ * Dragged, if it has been. Otherwise what they need, but never more than a third of the panel:
+ * without a ceiling the first thing a wide history does is take the whole width, and the reader has
+ * to discover a drag handle before they can read a subject.
+ */
+function laneWidth(): number {
+  if (graphWidth === 0) {
+    return 0;
+  }
+
+  if (graphColumn !== null) {
+    return Math.min(graphColumn, graphWidth);
+  }
+
+  return Math.min(graphWidth, Math.max(120, Math.round(viewport.clientWidth / 3)));
+}
+
+/** Lane x, squeezed into the room the lanes were given. Identity while they have all they need. */
+function laneScale(): number {
+  const room = laneWidth();
+  return graphWidth <= 0 || room >= graphWidth ? 1 : room / graphWidth;
+}
+
 function render(): void {
   // The one measurement the stylesheet cannot hold: how wide the lanes are is a property of the
   // repository. Flat, there are no lanes, so the rows reclaim the space.
-  const indent = (isFlat() ? 0 : graphWidth) + 8;
+  const indent = (isFlat() ? 0 : laneWidth()) + 8;
 
   /*
    * The header is outside the scroller, so it is as wide as the scrollbar is - and its columns
@@ -1403,7 +1446,11 @@ function drawGraph(): void {
   }
 
   const dpr = window.devicePixelRatio || 1;
-  const width = Math.max(graphWidth, 1);
+  const width = Math.max(laneWidth(), 1);
+  // Applied to coordinates rather than to the transform: scaling the whole context would squash the
+  // dots into ellipses and thin the strokes, and neither of those is what "narrower" should mean.
+  const sx = laneScale();
+  const x = (px: number): number => px * sx;
   const height = viewport.clientHeight;
 
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
@@ -1444,11 +1491,11 @@ function drawGraph(): void {
 
     ctx.strokeStyle = palette[path.color % LANE_COLORS] ?? '#888';
     ctx.beginPath();
-    ctx.moveTo(firstPt.x, y(firstPt.y));
+    ctx.moveTo(x(firstPt.x), y(firstPt.y));
 
     for (let i = 1; i < pts.length; i++) {
       const p = pts[i] as Point;
-      ctx.lineTo(p.x, y(p.y));
+      ctx.lineTo(x(p.x), y(p.y));
     }
 
     ctx.stroke();
@@ -1467,7 +1514,8 @@ function drawGraph(): void {
     const cy = y(dot.center.y);
 
     ctx.beginPath();
-    ctx.arc(dot.center.x, cy, dot.kind === DotKind.Head ? DOT_RADIUS + 1.5 : DOT_RADIUS, 0, Math.PI * 2);
+    // The centre moves; the radius does not. Lanes sit closer together, dots stay round.
+    ctx.arc(x(dot.center.x), cy, dot.kind === DotKind.Head ? DOT_RADIUS + 1.5 : DOT_RADIUS, 0, Math.PI * 2);
 
     if (dot.kind === DotKind.Merge) {
       // A merge is drawn hollow so it reads differently at a glance without needing a legend.
@@ -1669,6 +1717,15 @@ function applyColumns(): void {
  */
 function placeGrips(): void {
   const bar = columnsEl.getBoundingClientRect();
+  const graphGrip = columnsEl.querySelector<HTMLElement>(".col-grip[data-grip='graph']");
+
+  if (graphGrip !== null) {
+    // The lanes have no header cell of their own - they are the header's left padding - so this one
+    // is placed from the padding rather than measured off a column.
+    const room = laneWidth();
+    graphGrip.hidden = isFlat() || room === 0;
+    graphGrip.style.left = `${room + 4}px`;
+  }
 
   for (const column of FIXED_COLUMNS) {
     const grip = columnsEl.querySelector<HTMLElement>(`.col-grip[data-grip='${column.key}']`);
@@ -1711,7 +1768,41 @@ columnsEl.addEventListener('pointerdown', (event: PointerEvent) => {
     return;
   }
 
-  const key = grip.dataset['grip'] as ColumnKey;
+  const key = grip.dataset['grip'] as ColumnKey | 'graph';
+
+  if (key === 'graph') {
+    const startX = event.clientX;
+    const startRoom = laneWidth();
+
+    grip.setPointerCapture(event.pointerId);
+    grip.classList.add('dragging');
+    event.preventDefault();
+
+    // The lanes are on the left, so the boundary moving right is the graph growing - the opposite
+    // of the fixed columns, which are anchored to the other edge.
+    const onGraphMove = (move: PointerEvent): void => {
+      const ceiling = Math.max(MIN_COLUMN, columnsEl.clientWidth - 160);
+      graphColumn = Math.round(
+        Math.min(Math.max(startRoom + (move.clientX - startX), MIN_COLUMN), ceiling),
+      );
+      placeGrips();
+      schedule();
+    };
+
+    const onGraphUp = (): void => {
+      grip.classList.remove('dragging');
+      grip.removeEventListener('pointermove', onGraphMove);
+      grip.removeEventListener('pointerup', onGraphUp);
+      grip.removeEventListener('pointercancel', onGraphUp);
+      saveViewState();
+    };
+
+    grip.addEventListener('pointermove', onGraphMove);
+    grip.addEventListener('pointerup', onGraphUp);
+    grip.addEventListener('pointercancel', onGraphUp);
+    return;
+  }
+
   const cell = columnsEl.querySelector<HTMLElement>(`.col[data-sort='${key}']`);
 
   if (cell === null) {
@@ -1746,6 +1837,16 @@ columnsEl.addEventListener('dblclick', (event) => {
   const grip = (event.target as HTMLElement).closest('.col-grip') as HTMLElement | null;
 
   if (grip === null) {
+    return;
+  }
+
+  if (grip.dataset['grip'] === 'graph') {
+    // Back to taking what the lanes need, up to the ceiling - which is a rule that adapts, rather
+    // than a number that happened to be right on one panel width.
+    graphColumn = null;
+    placeGrips();
+    schedule();
+    saveViewState();
     return;
   }
 

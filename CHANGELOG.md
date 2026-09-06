@@ -2,6 +2,10 @@
 
 ## 0.2.0
 
+- **The lanes no longer take the whole panel.** They are capped at a third of it by default and
+  have a grip of their own, and when given less room than they want they are drawn closer together
+  rather than cut off.
+
 - **More than one repository in a workspace.** Opening the graph asks which one; each gets its own
   tab, and the sidebar follows whichever is in front while remembering what you ticked in the
   others. Filters are answered per repository - before this, unticking a branch in one graph

@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 
 const css = readFileSync(new URL('../src/webview/style.css', import.meta.url), 'utf8');
 const script = readFileSync(new URL('../src/webview/main.ts', import.meta.url), 'utf8');
+const markup = readFileSync(new URL('../src/webview/markup.ts', import.meta.url), 'utf8');
 
 const problems = [];
 
@@ -91,6 +92,31 @@ if (!/#columns \{[^}]*position: relative/s.test(css)) {
 // otherwise it takes whichever one is free and the graph's text lands under the wrong heading.
 if (!/\.cell-subject \{\s*grid-column: 1;/.test(css) && !/grid-column: 1;/.test(css)) {
   problems.push('the subject cell does not name its grid track');
+}
+
+/*
+ * The lanes have a grip too, and it is the one that matters most on a wide history: without it the
+ * graph takes whatever it needs and the subject column becomes `feat(s…`. It is not one of the
+ * declared columns - the lanes are the header's left padding rather than a track - so it is checked
+ * separately, and the markup and the script have to agree on the name.
+ */
+const graphGrip = /data-grip=['"]graph['"]/.test(markup);
+const graphHandled = /grip\.dataset\['grip'\] === 'graph'/.test(script) || /=== 'graph'/.test(script);
+
+console.log(`lane grip      : ${graphGrip ? 'in the markup' : 'MISSING'}, ${graphHandled ? 'handled' : 'UNHANDLED'}`);
+
+if (!graphGrip) {
+  problems.push('there is no grip for the lanes, so a wide graph cannot be given less room');
+}
+
+if (!graphHandled) {
+  problems.push('nothing in main.ts handles the lane grip, so dragging it does nothing');
+}
+
+// And the ceiling that applies before anybody drags anything. A graph with no cap is the state the
+// grip exists to rescue people from, and a default nobody has to discover is better than a rescue.
+if (!/function laneWidth\(\)/.test(script) || !/clientWidth \/ 3/.test(script)) {
+  problems.push('the lanes have no default ceiling, so a wide history takes the whole panel');
 }
 
 console.log('');
