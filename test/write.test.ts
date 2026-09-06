@@ -35,6 +35,7 @@ import type { ActionUi, Target } from '../src/actions/registry.ts';
 import { buildMenu, confirmIfNeeded, findAction } from '../src/actions/registry.ts';
 import { RepoLock } from '../src/git/lock.ts';
 import { listStashes } from '../src/git/stash.ts';
+import { nameProblem, readRemotes } from '../src/git/remotes.ts';
 import { HistoryLoader } from '../src/git/history.ts';
 
 const git = new Git({});
@@ -1214,4 +1215,185 @@ test('a remote that connects and then says nothing is given up on, not waited on
   } finally {
     server.close();
   }
+});
+
+
+/*
+ * Remotes, against a real one.
+ *
+ * The remote is a second repository on disk, added by path. Nothing here is mocked: the fetch is a
+ * fetch, and what it writes into `refs/remotes/` is what the assertions read back. A remote that is
+ * configured correctly and fetches nothing is exactly the failure worth a test.
+ */
+
+const REPO: Target = { kind: 'repo' };
+
+/** The names git reports, so an assertion reads what git thinks rather than what the action said. */
+function remoteNames(dir: string): string[] {
+  return sh(dir, 'remote')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/** Remote-tracking refs under one remote. */
+function tracking(dir: string, name: string): string[] {
+  return sh(dir, 'for-each-ref', '--format=%(refname)', `refs/remotes/${name}/`)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+test('a remote name git would reject never reaches git', () => {
+  assert.equal(nameProblem('upstream', ['origin']), null);
+  assert.match(nameProblem('', []) ?? '', /needs a name/);
+  assert.match(nameProblem('two words', []) ?? '', /spaces/);
+  // `origin/x` would make `origin/x/main` ambiguous with a branch called `x/main` on `origin`.
+  assert.match(nameProblem('origin/x', []) ?? '', /slash/);
+  assert.match(nameProblem('-f', []) ?? '', /dash/);
+  assert.match(nameProblem('.', []) ?? '', /this repository/);
+  assert.match(nameProblem('origin', ['origin']) ?? '', /already a remote called origin/);
+});
+
+test('adding a remote configures it and fetches what is on it', async () => {
+  const dir = makeRepo();
+  const server = makeRepo();
+
+  const ui = fakeUi({ choices: ['Add a remote...'], inputs: ['origin', server] });
+  const result = await run(dir, 'weft.manageRemotes', REPO, ui);
+
+  assert.equal(result.ran, true);
+  assert.deepEqual(remoteNames(dir), ['origin']);
+  assert.equal(sh(dir, 'remote', 'get-url', 'origin').trim(), server);
+
+  // Configured is half of it. The branches on the other repository have to have arrived.
+  assert.ok(
+    tracking(dir, 'origin').includes('refs/remotes/origin/main'),
+    `expected origin/main among ${tracking(dir, 'origin').join(', ')}`,
+  );
+  assert.match(result.message, /Added origin and fetched it/);
+});
+
+test('a remote that cannot be reached is still added, and says so', async () => {
+  const dir = makeRepo();
+  const nowhere = join(dir, 'not-a-repository');
+
+  const ui = fakeUi({ choices: ['Add a remote...'], inputs: ['origin', nowhere] });
+  const result = await run(dir, 'weft.manageRemotes', REPO, ui);
+
+  // The distinction that matters: the fetch failed, the configuration did not, and the message has
+  // to say which - otherwise the next thing the user does is add it again.
+  assert.deepEqual(remoteNames(dir), ['origin']);
+  assert.match(result.message, /Added origin\. Fetching it failed/);
+});
+
+test('renaming a remote takes its tracking refs with it', async () => {
+  const dir = makeRepo();
+  const server = makeRepo();
+
+  sh(dir, 'remote', 'add', 'origin', server);
+  sh(dir, 'fetch', '-q', 'origin');
+  assert.ok(tracking(dir, 'origin').length > 0, 'fixture should have fetched something');
+
+  const remotes = await readRemotes(git, await open(dir));
+  const ui = fakeUi({ choices: [`origin  ${server}`, 'Rename'], inputs: ['upstream'] });
+  const result = await run(dir, 'weft.manageRemotes', REPO, ui);
+
+  assert.equal(remotes.length, 1);
+  assert.equal(result.ran, true);
+  assert.deepEqual(remoteNames(dir), ['upstream']);
+  assert.deepEqual(tracking(dir, 'origin'), [], 'the old tracking refs should be gone');
+  assert.ok(tracking(dir, 'upstream').includes('refs/remotes/upstream/main'));
+});
+
+test('changing a remote URL repoints it and does not fetch', async () => {
+  const dir = makeRepo();
+  const server = makeRepo();
+  const moved = makeRepo();
+
+  sh(dir, 'remote', 'add', 'origin', server);
+  sh(dir, 'fetch', '-q', 'origin');
+  const before = tracking(dir, 'origin');
+
+  const ui = fakeUi({ choices: [`origin  ${server}`, 'Change URL'], inputs: [moved] });
+  const result = await run(dir, 'weft.manageRemotes', REPO, ui);
+
+  assert.equal(sh(dir, 'remote', 'get-url', 'origin').trim(), moved);
+
+  // Refs fetched from the old URL are left exactly as they were: whether they still mean anything
+  // is not something the action can know, so it does not quietly decide.
+  assert.deepEqual(tracking(dir, 'origin'), before);
+  assert.match(result.message, /Fetch to see what is there/);
+});
+
+test('removing a remote counts what it strands, and deletes it', async () => {
+  const dir = makeRepo();
+  const server = makeRepo();
+
+  sh(dir, 'remote', 'add', 'origin', server);
+  sh(dir, 'fetch', '-q', 'origin');
+  const stranded = tracking(dir, 'origin').length;
+  assert.ok(stranded > 0);
+
+  const ui = fakeUi({ choices: [`origin  ${server}`, 'Remove origin'] });
+  const result = await run(dir, 'weft.manageRemotes', REPO, ui);
+
+  assert.match(ui.confirmations[0] ?? '', new RegExp(`^${stranded} remote-tracking branch`));
+  assert.match(ui.confirmations[0] ?? '', /Nothing on the server changes/);
+  assert.equal(result.ran, true);
+  assert.deepEqual(remoteNames(dir), []);
+  assert.deepEqual(tracking(dir, 'origin'), []);
+});
+
+test('backing out of removing a remote leaves it alone', async () => {
+  const dir = makeRepo();
+  const server = makeRepo();
+
+  sh(dir, 'remote', 'add', 'origin', server);
+  sh(dir, 'fetch', '-q', 'origin');
+  const before = tracking(dir, 'origin');
+
+  const ui = fakeUi({ confirm: false, choices: [`origin  ${server}`, 'Remove origin'] });
+  const result = await run(dir, 'weft.manageRemotes', REPO, ui);
+
+  assert.equal(result.ran, false);
+  assert.deepEqual(remoteNames(dir), ['origin']);
+  assert.deepEqual(tracking(dir, 'origin'), before);
+});
+
+test('a separate push URL is read back, and the same one is not', async () => {
+  const dir = makeRepo();
+  const server = makeRepo();
+  const elsewhere = makeRepo();
+
+  sh(dir, 'remote', 'add', 'origin', server);
+
+  // With no pushurl set, `git remote -v` prints the fetch URL for both. Reporting that as a
+  // separate push URL would put a redundant "(pushes to ...)" on every remote there is.
+  const plain = await readRemotes(git, await open(dir));
+  assert.equal(plain[0]?.fetchUrl, server);
+  assert.equal(plain[0]?.pushUrl, null);
+
+  sh(dir, 'remote', 'set-url', '--push', 'origin', elsewhere);
+  const split = await readRemotes(git, await open(dir));
+  assert.equal(split[0]?.fetchUrl, server);
+  assert.equal(split[0]?.pushUrl, elsewhere);
+});
+
+test('managing remotes is offered even when there are none', async () => {
+  const dir = makeRepo();
+  const repo = await open(dir);
+  const state = await readRepoState(git, repo);
+
+  const menu = buildMenu({ kind: 'repo' }, state);
+  const entry = menu.find((item) => item.id === 'weft.manageRemotes');
+
+  // Every other network action is greyed out with "No remotes configured", which is a dead end if
+  // the only way to configure one is also greyed out.
+  assert.notEqual(entry, undefined);
+  assert.equal(entry?.disabledReason, null);
+  assert.equal(
+    menu.find((item) => item.id === 'weft.fetch')?.disabledReason,
+    'No remotes configured',
+  );
 });

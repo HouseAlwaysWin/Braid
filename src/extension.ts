@@ -422,7 +422,7 @@ function start(context: vscode.ExtensionContext): void {
      * someone else's clone, and a button for it one pixel from Push is an accident waiting to
      * happen. The command palette is far enough away to be a decision.
      */
-    ...['weft.fetch', 'weft.pull', 'weft.push', 'weft.pushForce'].map((id) =>
+    ...['weft.fetch', 'weft.pull', 'weft.push', 'weft.pushForce', 'weft.manageRemotes'].map((id) =>
       vscode.commands.registerCommand(id, () => repoAction(id)),
     ),
 

@@ -75,6 +75,9 @@ Working:
   is what you meant
 - A text filter for the branch list itself, for repositories with more refs than fit on screen
 - Each author gets their own colour, derived from the name so it never shifts as pages stream in
+- **Git Weft: Manage Remotes...** in the command palette lists what each remote points at, and
+  adds, renames, repoints or removes one. Adding fetches it; removing says how many
+  remote-tracking branches go with it
 - Fetch, pull and push, using whatever credential helper is already set up - Weft never asks for
   a password and never stores one. Pull asks whether to merge or rebase only when the histories
   have actually diverged, and force push is `--force-with-lease` after a fetch, never `--force`

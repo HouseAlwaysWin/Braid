@@ -151,6 +151,11 @@
         "icon": "$(arrow-up)"
       },
       {
+        "command": "weft.manageRemotes",
+        "title": "Manage Remotes...",
+        "category": "Git Weft"
+      },
+      {
         "command": "weft.pushForce",
         "title": "Force Push (with lease)",
         "category": "Git Weft"
@@ -223,6 +228,10 @@
         },
         {
           "command": "weft.pushForce",
+          "when": "weft.graphVisible"
+        },
+        {
+          "command": "weft.manageRemotes",
           "when": "weft.graphVisible"
         }
       ],

@@ -19,6 +19,7 @@ import { BRANCH_ACTIONS } from './branches.ts';
 import { COMMIT_ACTIONS } from './commit.ts';
 import { MERGE_ACTIONS } from './merge.ts';
 import { NETWORK_ACTIONS } from './network.ts';
+import { REMOTE_ACTIONS } from './remotes.ts';
 import { STASH_ACTIONS } from './stash.ts';
 
 export type {
@@ -40,6 +41,7 @@ export const ACTIONS: readonly Action[] = [
   ...COMMIT_ACTIONS,
   ...MERGE_ACTIONS,
   ...NETWORK_ACTIONS,
+  ...REMOTE_ACTIONS,
   ...STASH_ACTIONS,
 ];
 
