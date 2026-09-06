@@ -2,6 +2,11 @@
 
 ## 0.2.0
 
+- **More than one repository in a workspace.** Opening the graph asks which one; each gets its own
+  tab, and the sidebar follows whichever is in front while remembering what you ticked in the
+  others. Filters are answered per repository - before this, unticking a branch in one graph
+  reloaded every other open graph with a list of ref names that do not exist in it.
+
 - **Authors** can be filtered by text, the way branches and tags already could - typing narrows who
   is listed without changing what the graph walks, and **Show Only Who Is Listed** applies the
   listing to it in one click.

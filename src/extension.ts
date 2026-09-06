@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 
 import { Git } from './git/exec.ts';
 import type { RepoInfo } from './git/discovery.ts';
@@ -67,6 +67,26 @@ function candidateFolders(): string[] {
  * of them throw would abandon the folders behind it *and* whatever the caller was going to do with
  * the answer, which is a great deal of damage for a path that was only ever a guess.
  */
+async function findRepositories(git: Git): Promise<RepoInfo[]> {
+  const found = new Map<string, RepoInfo>();
+
+  for (const folder of candidateFolders()) {
+    try {
+      const repo = await discover(git, folder);
+
+      // Keyed by root: several candidate folders can sit inside one repository, and the first one
+      // that resolved is the one whose position in the list means something.
+      if (repo !== null && !found.has(repo.root)) {
+        found.set(repo.root, repo);
+      }
+    } catch (err) {
+      output?.debug(`not a usable folder: ${folder} (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+
+  return [...found.values()];
+}
+
 async function findRepository(git: Git): Promise<RepoInfo | null> {
   for (const folder of candidateFolders()) {
     try {
@@ -81,6 +101,25 @@ async function findRepository(git: Git): Promise<RepoInfo | null> {
   }
 
   return null;
+}
+
+/**
+ * Ask which repository, showing enough to tell two checkouts of the same project apart.
+ *
+ * The path, not just the folder name: `web` and `web` are two different answers, and the only thing
+ * that distinguishes them is where they are.
+ */
+async function pickRepository(found: readonly RepoInfo[]): Promise<RepoInfo | null> {
+  const chosen = await vscode.window.showQuickPick(
+    found.map((repo) => ({
+      label: basename(repo.root),
+      description: repo.root,
+      repo,
+    })),
+    { title: 'Which repository?', placeHolder: 'Weft opens one graph per repository' },
+  );
+
+  return chosen?.repo ?? null;
 }
 
 /** Put something on the clipboard and say so, briefly - a copy with no feedback reads as a no-op. */
@@ -185,8 +224,18 @@ function start(context: vscode.ExtensionContext): void {
 
   // Read fresh on every reload, so neither view has to push anything at the panel.
   const filters = {
-    refs: () => refs.visibleRefs(),
-    authorArgs: () => authors.filterArgs(),
+    refs: (root: string) => refs.visibleRefs(root),
+    authorArgs: (root: string) => authors.filterArgs(root),
+    /*
+     * Follow the graph that is being looked at.
+     *
+     * The sidebar shows one repository, and every open graph reloads when a tick moves - so the one
+     * it shows has to be the one in front, or the ticks belong to a graph nobody is looking at.
+     */
+    activated: (repo: RepoInfo) => {
+      void refs.setRepository(repo);
+      authors.setRepository(repo);
+    },
     listRefs: () => refs.listForMenu(),
     refsMoved: () => void refs.reload(),
     setRefsVisible: (refNames: readonly string[], visible: boolean) =>
@@ -222,10 +271,26 @@ function start(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const repo = await findRepository(git);
+      const found = await findRepositories(git);
+
+      /*
+       * Which repository, when there is more than one.
+       *
+       * `candidateFolders` puts the folder of the open file first, so the head of this list is
+       * already the one most likely meant - it is offered first and nothing is remembered. A
+       * workspace with several repositories is one where the answer changes with what you are
+       * looking at, so a remembered choice would be wrong more often than it was right.
+       */
+      const repo =
+        found.length <= 1
+          ? (found[0] ?? null)
+          : await pickRepository(found);
 
       if (repo === null) {
-        void vscode.window.showWarningMessage('Weft: no git repository found in this workspace.');
+        if (found.length === 0) {
+          void vscode.window.showWarningMessage('Weft: no git repository found in this workspace.');
+        }
+
         return;
       }
 

@@ -26,7 +26,10 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
   private view: vscode.TreeView<Author> | null = null;
 
   /** Selected authors, by name. Empty means everyone, which is not the same as nobody. */
-  private readonly selected = new Set<string>();
+  private selected = new Set<string>();
+
+  /** Ticked authors per repository, for the same two reasons the ref view keeps its own. */
+  private readonly selectedByRepo = new Map<string, Set<string>>();
 
   /**
    * Text narrowing the *listing*, which is a different job from the ticks.
@@ -48,19 +51,32 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
       return;
     }
 
+    if (this.repo !== null) {
+      this.selectedByRepo.set(this.repo.root, this.selected);
+    }
+
     this.repo = repo;
     this.authors = [];
     this.loaded = false;
-    this.selected.clear();
+    this.selected = this.selectedByRepo.get(repo?.root ?? '') ?? new Set<string>();
     // A name typed to find someone in one repository means nothing in another.
     this.query = '';
     this.publishFiltering();
     this.changed.fire(undefined);
   }
 
-  /** `git log` arguments for the current selection; empty when nobody is filtered out. */
-  filterArgs(): string[] {
-    return this.selected.size === 0 ? [] : authorArgs([...this.selected]);
+  /**
+   * `git log` arguments for the current selection; empty when nobody is filtered out.
+   *
+   * Answered for one repository only - the one this view is showing. Every open graph reloads when
+   * a tick moves, and a name that authored nothing in the other one filters it down to nothing.
+   */
+  filterArgs(root: string): string[] {
+    if (this.repo === null || this.repo.root !== root || this.selected.size === 0) {
+      return [];
+    }
+
+    return authorArgs([...this.selected]);
   }
 
   /**

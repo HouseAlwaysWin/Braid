@@ -55,7 +55,17 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
    * branch created after the last refresh shows up by default, which is the behaviour that does not
    * surprise anyone.
    */
-  private readonly hidden = new Set<string>();
+  private hidden = new Set<string>();
+
+  /**
+   * The unticked refs of every repository this session has looked at, keyed by root.
+   *
+   * Two reasons it is not one set. Switching tabs between two graphs and back would otherwise
+   * discard whatever you had unticked in the first, which is work. And the panels ask this view
+   * what to walk *by root* - a set belonging to one repository, handed to another, names refs that
+   * do not exist there and empties its graph.
+   */
+  private readonly hiddenByRepo = new Map<string, Set<string>>();
 
   readonly onDidChangeTreeData = this.changed.event;
   readonly onDidChangeFilter = this.filterChanged.event;
@@ -72,8 +82,12 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     }
 
     this.repo = repo;
-    // A hidden ref in one repository means nothing in another.
-    this.hidden.clear();
+    // Kept rather than cleared: coming back to a graph should find it as you left it.
+    if (this.repo !== null) {
+      this.hiddenByRepo.set(this.repo.root, this.hidden);
+    }
+
+    this.hidden = this.hiddenByRepo.get(repo?.root ?? '') ?? new Set<string>();
     await this.reload();
   }
 
@@ -81,8 +95,20 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
    * The refs the graph should walk, or null for "everything" - which lets the caller use `--all`
    * and skip listing hundreds of refs on the command line.
    */
-  visibleRefs(): string[] | null {
-    if (this.hidden.size === 0) {
+  /** Which repository this view is showing, so a caller can ask it the right question. */
+  get repoRoot(): string | null {
+    return this.repo?.root ?? null;
+  }
+
+  visibleRefs(root: string): string[] | null {
+    /*
+     * Only the repository this view is showing.
+     *
+     * Every open graph reloads when a tick moves, and each asks what to walk. Answering with this
+     * repository's refs for somebody else's would hand a graph a list of names that do not exist in
+     * it - which git reads as "walk nothing".
+     */
+    if (this.repo === null || this.repo.root !== root || this.hidden.size === 0) {
       return null;
     }
 

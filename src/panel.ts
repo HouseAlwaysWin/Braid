@@ -27,8 +27,15 @@ import { BODY_MARKUP } from './webview/markup.ts';
  * list of callbacks, and read fresh on every reload so the panel never holds a stale copy.
  */
 export interface FilterSource {
-  refs(): string[] | null;
-  authorArgs(): string[];
+  /**
+   * Which refs to walk, for one repository.
+   *
+   * The root is not decoration. Every open graph reloads when a tick moves in the sidebar, and the
+   * sidebar is showing one repository - so without it, unticking a branch in one graph reloads the
+   * other with a list of ref names that do not exist in it, and empties it.
+   */
+  refs(root: string): string[] | null;
+  authorArgs(root: string): string[];
   /** Every ref with whether it is drawn, for the header's branch menu. */
   listRefs(): RefEntry[];
   /** Switch them on or off. The same call the sidebar's own ticks make, so the two cannot drift. */
@@ -48,6 +55,8 @@ export interface FilterSource {
    * indistinguishable from the delete having done nothing.
    */
   refsMoved(): void;
+  /** A graph took focus; point the sidebar at its repository. */
+  activated(repo: RepoInfo): void;
 }
 import { RepoLock } from './git/lock.ts';
 import type { WorkingTree } from './git/repoState.ts';
@@ -348,6 +357,9 @@ export class WeftPanel {
   private setActive(active: boolean): void {
     if (active) {
       WeftPanel.current = this;
+      // The sidebar shows one repository at a time, and the one worth showing is the one being
+      // looked at. Without this, opening a second graph leaves Branches & Tags on the first.
+      this.filters.activated(this.repo);
     } else if (WeftPanel.current === this) {
       WeftPanel.current = null;
     }
@@ -589,8 +601,8 @@ export class WeftPanel {
       this.search !== null ||
       this.dates !== null ||
       this.firstParent ||
-      this.filters.refs() !== null ||
-      this.filters.authorArgs().length > 0
+      this.filters.refs(this.repo.root) !== null ||
+      this.filters.authorArgs(this.repo.root).length > 0
     );
   }
 
@@ -845,8 +857,8 @@ export class WeftPanel {
           maxCommits: config.get<number>('maxCommits', 250_000),
           firstParentOnly: this.firstParent,
           order: this.order,
-          filters: filterArgs(this.search, this.filters.authorArgs(), dates),
-          refs: this.filters.refs(),
+          filters: filterArgs(this.search, this.filters.authorArgs(this.repo.root), dates),
+          refs: this.filters.refs(this.repo.root),
           stashes,
         },
         controller.signal,

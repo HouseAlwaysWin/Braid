@@ -1537,7 +1537,7 @@ if (watchTest) {
       await new Promise((r) => setTimeout(r, 25));
     }
 
-    const walked = refsProvider.visibleRefs();
+    const walked = refsProvider.visibleRefs(refsProvider.repoRoot);
     const hiddenNow = walked !== null && !walked.includes(victim.refName);
     const tickOff = refsProvider
       .getChildren(refsProvider.getChildren().find((g) => g.id === 'heads'))
@@ -1565,6 +1565,27 @@ if (watchTest) {
 
     if (posted.filter((m) => m.type === 'done').length === walksBefore) {
       problems.push('hiding a branch from the header did not redraw the graph');
+    }
+
+    /*
+     * And the same question asked on behalf of a different repository.
+     *
+     * Every open graph reloads when a tick moves, and each asks what to walk. Before the roots were
+     * passed, the second graph got the first one's ref names - which name nothing in it, so git
+     * walked nothing and it went blank. The filters belong to the repository the sidebar is
+     * showing, and to no other.
+     */
+    const foreign = refsProvider.visibleRefs('D:/somewhere/else');
+    const authorsForeign = treeProviders.get('weft.authors').filterArgs('D:/somewhere/else');
+
+    console.log('other repo     : refs ->', foreign, '| authors ->', authorsForeign.length, 'args');
+
+    if (foreign !== null) {
+      problems.push(`a second repository was told to walk ${foreign.length} refs belonging to this one`);
+    }
+
+    if (authorsForeign.length > 0) {
+      problems.push("a second repository was given this one's author filter");
     }
 
     // --- and a whole group at once, which is what the heading's tick sends ------------------

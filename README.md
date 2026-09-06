@@ -13,6 +13,9 @@ Working:
 
 - Commit graph with branches, merges, tags, remotes and HEAD
 - Ordinary clones, bare repositories, linked worktrees and submodules
+- More than one repository in a workspace: opening the graph asks which, one graph per repository,
+  each its own tab. **Branches & Tags** and **Authors** follow whichever graph you are looking at,
+  and remember what you had ticked in the others
 - Streaming load: the first rows paint while git is still walking
 - Virtualized rendering: a 20,000-row history keeps 31 row elements in the DOM
 - A row for the working tree when there is one, above the history and hanging off HEAD by a dashed
