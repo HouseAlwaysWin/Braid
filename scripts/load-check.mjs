@@ -72,8 +72,38 @@ const contentProviders = new Map();
 const diffsOpened = [];
 const contextKeys = new Map();
 const copied = [];
+
+/*
+ * Settings, so that a default is not the only value any of them can have. Every `get` used to
+ * return the fallback it was handed, which meant the branches behind a non-default - a hidden
+ * status bar, a timer that is switched on - could not be reached at all.
+ */
+const settings = new Map();
+
+/*
+ * Intervals, recorded rather than scheduled. The one interval Braid sets is the auto-fetch, whose
+ * shortest period is a minute; a test cannot wait for it, but it can insist that asking for five
+ * minutes schedules five minutes and asking for none schedules nothing.
+ */
+const intervals = [];
+const realSetInterval = globalThis.setInterval;
+
+globalThis.setInterval = (fn, ms, ...rest) => {
+  intervals.push({ ms, fn });
+  return { stub: true, ms };
+};
+
+globalThis.clearInterval = (handle) => {
+  if (handle?.stub !== true) {
+    return realSetInterval === undefined ? undefined : clearTimeout(handle);
+  }
+
+  return undefined;
+};
+
 let statusBarItem = null;
 let viewStateHandler = null;
+let disposeHandler = null;
 let panelObject = null;
 let quickPick = null;
 
@@ -122,6 +152,21 @@ class StubEmitter {
   fire(v) { for (const l of [...this.listeners]) l(v); }
   dispose() {}
 }
+
+/** The built-in git extension, which is where Weft learns about things it cannot watch itself. */
+const repositoryState = new StubEmitter();
+const repositoryOpened = new StubEmitter();
+const repositoryClosed = new StubEmitter();
+
+/** Settings changing, which nothing here could make happen before. */
+const configurationChanged = {
+  listeners: [],
+  fire(changed) {
+    for (const fn of [...this.listeners]) {
+      fn({ affectsConfiguration: (key) => changed.some((c) => c === key || key.startsWith(c)) });
+    }
+  },
+};
 
 const uri = (p) => ({
   fsPath: p,
@@ -173,7 +218,11 @@ const vscodeStub = {
       dispose() {},
     }),
     showInformationMessage: (m) => problems.push(`unexpected info message: ${m}`),
-    showWarningMessage: (m) => problems.push(`unexpected warning: ${m}`),
+    // Async, like the real one: `ui.confirm` awaits what comes back from it.
+    showWarningMessage: async (m) => {
+      problems.push(`unexpected warning: ${m}`);
+      return undefined;
+    },
     // Activation reports its own failure through this one, so it has to exist here - and anything
     // arriving on it is a failure by definition.
     showErrorMessage: async (m) => {
@@ -243,7 +292,7 @@ const vscodeStub = {
           },
         },
         onDidChangeViewState: (fn) => { viewStateHandler = fn; return { dispose() {} }; },
-        onDidDispose: () => ({ dispose() {} }),
+        onDidDispose: (fn) => { disposeHandler = fn; return { dispose() {} }; },
         reveal() {},
         dispose() {},
       });
@@ -258,16 +307,47 @@ const vscodeStub = {
   TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   workspace: {
     workspaceFolders: [{ uri: uri(repoPath) }],
-    getConfiguration: () => ({ get: (_key, fallback) => fallback }),
+    getConfiguration: (section) => ({
+      get: (key, fallback) => {
+        const full = section === undefined ? key : `${section}.${key}`;
+        return settings.has(full) ? settings.get(full) : fallback;
+      },
+    }),
     onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
-    onDidChangeConfiguration: () => ({ dispose() {} }),
+    onDidChangeConfiguration: (fn) => {
+      configurationChanged.listeners.push(fn);
+      return { dispose() {} };
+    },
     registerTextDocumentContentProvider: (scheme, provider) => {
       contentProviders.set(scheme, provider);
       return { dispose() {} };
     },
   },
   extensions: {
-    getExtension: () => undefined,
+    /*
+     * Present and active, which is the ordinary state of a VS Code window. Returning undefined
+     * meant `vscodeGit.ts` never got past its first null check - so neither the repository events
+     * that make the Source Control sections appear after a `git init`, nor the working-tree events
+     * the uncommitted row keeps up with, had ever run a line here.
+     */
+    getExtension: (id) =>
+      id === 'vscode.git'
+        ? {
+            isActive: true,
+            exports: {
+              getAPI: () => ({
+                repositories: [
+                  {
+                    rootUri: uri(repoPath.replace(/\\/g, '/')),
+                    state: { onDidChange: repositoryState.event },
+                  },
+                ],
+                onDidOpenRepository: repositoryOpened.event,
+                onDidCloseRepository: repositoryClosed.event,
+              }),
+            },
+          }
+        : undefined,
   },
   env: { clipboard: { writeText: async (text) => void copied.push(text) } },
 };
@@ -1601,6 +1681,125 @@ if (watchTest) {
       }
     }
   }
+}
+
+/*
+ * The three things the stub could not do until it stopped pretending: the built-in git extension
+ * existing, a setting having a value other than its default, and the panel being closed. Each of
+ * them gates a path that had never run a line here.
+ */
+{
+  // --- the working tree, told to us by someone else -----------------------------------------
+  const walksBefore = posted.filter((m) => m.type === 'done').length;
+  const workingBefore = posted.filter((m) => m.type === 'working').length;
+
+  writeFileSync(join(repoPath, 'f1.txt'), 'edited again, without committing\n');
+  repositoryState.fire();
+
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline && posted.filter((m) => m.type === 'working').length === workingBefore) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  const walksAfter = posted.filter((m) => m.type === 'done').length;
+  const told = posted.filter((m) => m.type === 'working').length > workingBefore;
+
+  console.log('\nworking events :', told ? 'the view was told' : 'NOT TOLD', '| walks:', walksBefore, '->', walksAfter);
+
+  if (!told) {
+    problems.push('a working-tree change from the git extension never reached the view');
+  }
+
+  // The whole point of listening rather than reloading: one `git status`, not a walk.
+  if (walksAfter !== walksBefore) {
+    problems.push('a file being saved re-walked the history');
+  }
+
+  // --- a repository appearing, which is what makes the sections show up ----------------------
+  contextKeys.delete('weft.hasRepository');
+  repositoryOpened.fire({
+    rootUri: uri(repoPath.replace(/\\/g, '/')),
+    state: { onDidChange: repositoryState.event },
+  });
+
+  const presenceBy = Date.now() + 10_000;
+  while (Date.now() < presenceBy && !contextKeys.has('weft.hasRepository')) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  console.log('repo events    : hasRepository ->', contextKeys.get('weft.hasRepository'));
+
+  if (contextKeys.get('weft.hasRepository') !== true) {
+    problems.push('a repository opening did not put the Source Control sections back');
+  }
+
+  // --- a setting with a value ----------------------------------------------------------------
+  const scheduled = intervals.length;
+
+  settings.set('weft.autoFetchMinutes', 5);
+  configurationChanged.fire(['weft.autoFetchMinutes']);
+  await new Promise((r) => setTimeout(r, 200));
+
+  const timer = intervals[intervals.length - 1];
+  console.log('auto-fetch     :', intervals.length > scheduled ? `every ${timer.ms} ms` : 'NOT SCHEDULED');
+
+  if (intervals.length === scheduled) {
+    problems.push('turning auto-fetch on scheduled nothing');
+  } else if (timer.ms !== 5 * 60_000) {
+    problems.push(`auto-fetch asked for 5 minutes and scheduled ${timer.ms} ms`);
+  }
+
+  settings.set('weft.autoFetchMinutes', 0);
+  configurationChanged.fire(['weft.autoFetchMinutes']);
+  await new Promise((r) => setTimeout(r, 200));
+
+  if (intervals.length > scheduled + 1) {
+    problems.push('turning auto-fetch off scheduled another one');
+  }
+
+  // The status bar has a switch too, and its off position had never been taken.
+  settings.set('weft.statusBar.enabled', false);
+  configurationChanged.fire(['weft.statusBar.enabled']);
+
+  const hiddenBy = Date.now() + 10_000;
+  while (Date.now() < hiddenBy && statusBarItem?.visible !== false) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  console.log('status bar off :', statusBarItem?.visible === false ? 'hidden' : 'STILL SHOWING');
+
+  if (statusBarItem?.visible !== false) {
+    problems.push('turning the status bar item off left it on screen');
+  }
+
+  settings.set('weft.statusBar.enabled', true);
+  configurationChanged.fire(['weft.statusBar.enabled']);
+  await new Promise((r) => setTimeout(r, 400));
+}
+
+/*
+ * Closing the graph, which nothing here had ever done. Everything the panel holds is released in
+ * one place - the watcher, the auto-fetch timer - and with no graph left to select in, the file
+ * list is showing a commit nobody can point at.
+ */
+if (disposeHandler !== null) {
+  disposeHandler();
+  await new Promise((r) => setTimeout(r, 200));
+
+  const filesView = treeViews.get('weft.files');
+  const filesProvider = treeProviders.get('weft.files');
+
+  console.log('panel closed   :', JSON.stringify(filesView?.message ?? ''), '|', filesProvider?.getChildren().length, 'files listed');
+
+  if (filesProvider?.getChildren().length !== 0) {
+    problems.push('closing the last graph left files in the Commit Files section');
+  }
+
+  if (!String(filesView?.message ?? '').includes('Select a commit')) {
+    problems.push(`closing the last graph left the section saying ${filesView?.message}`);
+  }
+} else {
+  problems.push('the panel never registered a dispose handler');
 }
 
 console.log('\ngit log        :', outputLines.filter((l) => l.startsWith('debug')).length, 'commands');

@@ -105,23 +105,29 @@ export function watchWorkingTree(root: string, onChange: () => void): { dispose(
     }
 
     const wanted = root.replace(/\\/g, '/').toLowerCase();
-    const matches = (repository: Repository): boolean =>
-      repository.rootUri.fsPath.replace(/\\/g, '/').toLowerCase() === wanted;
+
+    /*
+     * Guarded, because this runs outside the `try` above: an event handler is called later, by
+     * someone else, with whatever shape that version of the API hands over. The module claims that
+     * every path through it costs at most one trigger rather than an error, and until this was
+     * written the claim held for the subscription and not for the callback.
+     */
+    const watch = (repository: Repository): void => {
+      try {
+        if (repository.rootUri.fsPath.replace(/\\/g, '/').toLowerCase() === wanted) {
+          add(repository.state.onDidChange(onChange));
+        }
+      } catch {
+        // One fewer trigger.
+      }
+    };
 
     for (const repository of git.repositories) {
-      if (matches(repository)) {
-        add(repository.state.onDidChange(onChange));
-      }
+      watch(repository);
     }
 
     // The repository may not be open yet - Weft finds repositories the git extension has not been
     // asked about, and a bare one it will never open at all.
-    add(
-      git.onDidOpenRepository((repository) => {
-        if (matches(repository)) {
-          add(repository.state.onDidChange(onChange));
-        }
-      }),
-    );
+    add(git.onDidOpenRepository(watch));
   });
 }
