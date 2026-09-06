@@ -23,14 +23,20 @@
 /*
  * Two rows, explicitly, rather than one row left to wrap.
  *
- * The filters go on top and everything that describes the repository goes underneath. It used to be
- * one line that wrapped when it ran out of room, which was fine until the branch menu arrived: on a
- * branch called `claude/changelog-v0.52.0` the name was on the line twice - once as the button and
- * once inside the upstream summary - and the row it wrapped into was whichever the widths happened
- * to produce. Splitting it means the second line is a place rather than an accident.
+ * The repository's name and the filters share the top row - the name at one end, the controls at
+ * the other, which is the shape of a title bar and reads as one. Everything that describes where
+ * the repository currently stands goes underneath: the branch, how it sits against its remote, how
+ * old that answer is, how big the walk was.
+ *
+ * It used to be one line that wrapped when it ran out of room, which was fine until the branch menu
+ * arrived: on a branch called `claude/changelog-v0.52.0` the name was on the line twice - once as
+ * the button and once inside the upstream summary - and the row it wrapped into was whichever the
+ * widths happened to produce. Splitting it means the second line is a place rather than an
+ * accident.
  */
 export const BODY_MARKUP = `<header id="header">
   <div id="header-controls">
+    <span id="title">Weft</span>
     <span id="search-box">
       <button class="toggle" id="first-parent" type="button"
         title="Walk only the first parent of every merge: the mainline, without the commits that were merged into it.">first parent</button>
@@ -73,7 +79,6 @@ export const BODY_MARKUP = `<header id="header">
     </span>
   </div>
   <div id="header-status">
-    <span id="title">Weft</span>
     <span id="branch-menu">
       <button id="branch-button" type="button" aria-haspopup="true" aria-expanded="false"
         title="Switch to a branch, or choose which branches the graph draws. The ticks are the same ones as in Branches &amp; Tags.">

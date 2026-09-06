@@ -95,13 +95,15 @@ body {
   gap: 6px 12px;
 }
 
-/* The filters sit right, over the columns they act on, with the row to themselves. */
+/* The filters sit right, over the columns they act on; the repository's name holds the left. */
 #header-controls {
   justify-content: flex-end;
 }
 
 #title {
   font-weight: 600;
+  /* One end of the top row while the controls hold the other, however few of them there are. */
+  margin-right: auto;
 }
 
 #status {
