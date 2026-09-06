@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!--
+    The marketplace icon. A different job from `weft.svg`, which is the Source Control section's
+    icon: that one is drawn at 16px as a CSS mask and only its alpha survives, so it is one weight
+    of one colour. This one is its own picture on its own ground, seen at about 90px in the gallery
+    and 42px in the sidebar - so it can carry colour, and has to survive being shrunk to a thumbnail.
+
+    The same two strands as the section icon, because they should read as one thing, but drawn as
+    what the graph actually draws: lanes crossing, with a commit sitting on each one. The colours
+    are the graph's own first four lanes rather than a brand palette invented for the icon.
+  -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3440"/>
+      <stop offset="1" stop-color="#1c222b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#ground)"/>
+
+  <g fill="none" stroke-width="9" stroke-linecap="round">
+    <!-- Two lanes weaving past each other: the crossing is the whole motif. -->
+    <path d="M40 20c0 20 48 24 48 44s-48 24-48 44" stroke="#3794ff"/>
+    <path d="M88 20c0 20-48 24-48 44s48 24 48 44" stroke="#89d185"/>
+  </g>
+
+  <!-- A commit on each lane, at the two turns and at the crossing. -->
+  <g stroke="#1c222b" stroke-width="5">
+    <circle cx="40" cy="20" r="10" fill="#3794ff"/>
+    <circle cx="88" cy="20" r="10" fill="#89d185"/>
+    <circle cx="64" cy="64" r="11" fill="#d18616"/>
+    <circle cx="40" cy="108" r="10" fill="#89d185"/>
+    <circle cx="88" cy="108" r="10" fill="#3794ff"/>
+  </g>
+</svg>

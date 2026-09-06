@@ -11,7 +11,7 @@
  *   npm run build && node scripts/icon-check.mjs && node scripts/serve.mjs
  *   # then open http://localhost:4173/icon-check.html
  */
-import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const source = process.argv[2] ?? 'media';
@@ -92,3 +92,60 @@ for (const name of names) {
 
 writeFileSync('dist/icon-check.html', html);
 console.log(`dist/icon-check.html  <- ${icons.length} icon(s) from ${source}/`);
+
+/*
+ * And the marketplace icon, which is a different thing from the ones above.
+ *
+ * Those are drawn at 16px as CSS masks and only their alpha survives. This one is its own picture
+ * on its own ground, seen at about 90px in the gallery, and the marketplace will not take an SVG -
+ * so `media/icon.png` is committed, rasterised from `media/icon.svg` by a browser (this project has
+ * five devDependencies and none of them can draw; adding a rasteriser for one file that changes
+ * about never would be the largest of them by an order of magnitude).
+ *
+ * A committed binary is a thing that goes stale silently, so what can be checked here is checked:
+ * that it is there, that it is a real PNG, and that it is the size the marketplace requires. A
+ * missing or wrong-sized icon then fails the build rather than the upload.
+ */
+{
+  const declared = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).icon;
+  const problems = [];
+
+  if (declared === undefined) {
+    problems.push('package.json declares no icon, so the marketplace listing gets a placeholder');
+  } else {
+    let png;
+
+    try {
+      png = readFileSync(new URL(`../${declared}`, import.meta.url));
+    } catch {
+      problems.push(`package.json points at ${declared}, which is not there`);
+    }
+
+    if (png !== undefined) {
+      const signature = png.subarray(0, 8).toString('hex') === '89504e470d0a1a0a';
+      const width = signature ? png.readUInt32BE(16) : 0;
+      const height = signature ? png.readUInt32BE(20) : 0;
+
+      console.log(`\nmarketplace    : ${declared} ${width}x${height}, ${png.length} bytes`);
+
+      if (!signature) {
+        problems.push(`${declared} is not a PNG - the marketplace will not take an SVG here`);
+      } else if (width < 128 || height < 128) {
+        problems.push(`${declared} is ${width}x${height}; the marketplace wants at least 128x128`);
+      } else if (width !== height) {
+        problems.push(`${declared} is ${width}x${height}, and a non-square icon is cropped`);
+      }
+    }
+  }
+
+  for (const problem of problems) {
+    console.error(`  ! ${problem}`);
+  }
+
+  if (problems.length > 0) {
+    console.log('FAILED');
+    process.exit(1);
+  }
+
+  console.log('OK - the marketplace icon is a square PNG of the right size.');
+}

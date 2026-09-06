@@ -1,8 +1,9 @@
 {
   "name": "git-weft",
   "displayName": "Git Weft",
+  "icon": "media/icon.png",
   "description": "A fast, read-only Git commit graph for VS Code.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "HouseAlwaysWin",
   "license": "MIT",
   "engines": {
@@ -450,7 +451,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/column-check.mjs && node scripts/load-check.mjs --watch && node scripts/load-check.mjs --break-view=weft.files",
+    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/column-check.mjs && node scripts/icon-check.mjs && node scripts/load-check.mjs --watch && node scripts/load-check.mjs --break-view=weft.files",
     "vscode:prepublish": "node esbuild.mjs --production",
     "smoke": "node scripts/smoke.mjs",
     "load-check": "node scripts/load-check.mjs",
