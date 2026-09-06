@@ -23,10 +23,12 @@
 /*
  * Two rows, explicitly, rather than one row left to wrap.
  *
- * The repository's name and the filters share the top row - the name at one end, the controls at
- * the other, which is the shape of a title bar and reads as one. Everything that describes where
- * the repository currently stands goes underneath: the branch, how it sits against its remote, how
- * old that answer is, how big the walk was.
+ * The repository's name and the controls share the top row - the name at one end, everything that
+ * changes what is on screen at the other, which is the shape of a title bar and reads as one. That
+ * includes the two buttons that undo a choice rather than make one: they are only ever there
+ * because something above them is set. The row underneath is left saying where the repository
+ * stands and nothing else - the branch, how it sits against its remote, how old that answer is,
+ * how big the walk was.
  *
  * It used to be one line that wrapped when it ran out of room, which was fine until the branch menu
  * arrived: on a branch called `claude/changelog-v0.52.0` the name was on the line twice - once as
@@ -37,6 +39,8 @@
 export const BODY_MARKUP = `<header id="header">
   <div id="header-controls">
     <span id="title">Weft</span>
+    <button id="clear-sort" type="button" hidden
+      title="A sorted list is flat: the lanes only mean anything in the order git walked them. Click to go back.">graph order</button>
     <button id="clear-filters" type="button" hidden
       title="Drop the search, the date range, and the branch and author filters in Source Control. The sort is left alone.">clear filters</button>
     <span id="search-box">
@@ -97,8 +101,6 @@ export const BODY_MARKUP = `<header id="header">
     <span id="upstream" hidden></span>
     <span id="status">loading&hellip;</span>
     <button id="compare-mark" type="button" hidden></button>
-    <button id="clear-sort" type="button" hidden
-      title="A sorted list is flat: the lanes only mean anything in the order git walked them. Click to go back.">graph order</button>
   </div>
 </header>
 <section id="operation" hidden></section>
