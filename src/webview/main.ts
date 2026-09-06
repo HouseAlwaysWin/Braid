@@ -665,34 +665,74 @@ function openMenu(event: MouseEvent, target: Target): void {
   vscode.postMessage({ type: 'requestMenu', target, x: event.clientX, y: event.clientY });
 }
 
+/** A menu entry the view answers itself, grouped like the host's so the rules land in the same places. */
+interface LocalItem {
+  readonly label: string;
+  readonly group: string;
+  readonly run: () => void;
+}
+
+/** Put text on the clipboard. The host owns the clipboard; the view knows what is worth putting on it. */
+function copyItem(label: string, text: string): LocalItem {
+  return { label, group: 'copy', run: () => vscode.postMessage({ type: 'copy', text }) };
+}
+
 /**
  * The menu items the view answers itself.
  *
- * Comparing is not a repository action - it runs no git that changes anything and it depends on
- * what is selected, which is the view's business and not the host's. It still belongs on the menu:
- * ctrl-clicking a second commit is not something anybody discovers by trying, and an interaction
- * with no visible way in is one that does not exist.
+ * Neither comparing nor copying is a repository action: no git runs, nothing changes, and what they
+ * act on - what is selected, what is on the row - is the view's business rather than the host's.
+ * They still belong on the menu. Ctrl-clicking a second commit is not something anybody discovers
+ * by trying, and a hash you cannot copy from the thing displaying it is a hash you retype.
  */
-function localMenuItems(target: Target): { label: string; run: () => void }[] {
+function localMenuItems(target: Target): LocalItem[] {
+  if (target.kind === 'ref') {
+    const what = target.refKind === 'tag' ? 'Tag' : 'Branch';
+
+    return [
+      copyItem(`Copy ${what} Name`, target.label),
+      // The full name as git spells it, which is what a command line wants and the label is not:
+      // `origin/main` is a branch to read and `refs/remotes/origin/main` is one to pass to git.
+      copyItem('Copy Full Ref Name', target.refName),
+    ];
+  }
+
+  if (target.kind === 'stash') {
+    return [
+      copyItem('Copy Stash Name', target.name),
+      copyItem('Copy Stash Hash', target.sha),
+    ];
+  }
+
   if (target.kind !== 'commit') {
     return [];
   }
 
   const sha = target.sha;
 
+  const copies = [copyItem('Copy Commit Hash', sha), copyItem('Copy Commit Subject', target.subject)];
+
   // Nothing marked yet: this is the first of the two steps.
   if (compareFrom === null) {
-    return [{ label: 'Select for Compare', run: () => markForCompare(sha) }];
+    return [{ label: 'Select for Compare', group: 'compare', run: () => markForCompare(sha) }, ...copies];
   }
 
   // Right-clicking the marked commit itself: the only useful thing to offer is letting it go.
   if (sha === compareFrom) {
-    return [{ label: 'Clear Compare Selection', run: () => clearComparison() }];
+    return [
+      { label: 'Clear Compare Selection', group: 'compare', run: () => clearComparison() },
+      ...copies,
+    ];
   }
 
   return [
-    { label: `Compare with ${compareFrom.slice(0, 8)}`, run: () => compareWith(sha) },
-    { label: 'Select for Compare', run: () => markForCompare(sha) },
+    {
+      label: `Compare with ${compareFrom.slice(0, 8)}`,
+      group: 'compare',
+      run: () => compareWith(sha),
+    },
+    { label: 'Select for Compare', group: 'compare', run: () => markForCompare(sha) },
+    ...copies,
   ];
 }
 
@@ -709,7 +749,18 @@ function renderMenu(target: Target, items: readonly MenuItem[], x: number, y: nu
   menu.className = 'menu';
   menu.setAttribute('role', 'menu');
 
+  let localGroup: string | null = null;
+
   for (const item of local) {
+    if (localGroup !== null && item.group !== localGroup) {
+      const rule = document.createElement('div');
+
+      rule.className = 'menu-separator';
+      menu.append(rule);
+    }
+
+    localGroup = item.group;
+
     const el = document.createElement('div');
 
     el.className = 'menu-item';

@@ -107,6 +107,26 @@
         "category": "Git Weft"
       },
       {
+        "command": "weft.copyRefName",
+        "title": "Copy Name",
+        "category": "Git Weft"
+      },
+      {
+        "command": "weft.copyFullRefName",
+        "title": "Copy Full Ref Name",
+        "category": "Git Weft"
+      },
+      {
+        "command": "weft.copyFilePath",
+        "title": "Copy Path",
+        "category": "Git Weft"
+      },
+      {
+        "command": "weft.copyAbsoluteFilePath",
+        "title": "Copy Absolute Path",
+        "category": "Git Weft"
+      },
+      {
         "command": "weft.showFileHistory",
         "title": "Show File History",
         "category": "Git Weft",
@@ -151,6 +171,22 @@
         },
         {
           "command": "weft.showFileHistory",
+          "when": "false"
+        },
+        {
+          "command": "weft.copyRefName",
+          "when": "false"
+        },
+        {
+          "command": "weft.copyFullRefName",
+          "when": "false"
+        },
+        {
+          "command": "weft.copyFilePath",
+          "when": "false"
+        },
+        {
+          "command": "weft.copyAbsoluteFilePath",
           "when": "false"
         },
         {
@@ -212,6 +248,26 @@
           "command": "weft.showFileHistory",
           "when": "view == weft.files && viewItem == weftFile",
           "group": "navigation@1"
+        },
+        {
+          "command": "weft.copyFilePath",
+          "when": "view == weft.files && viewItem == weftFile",
+          "group": "copy@1"
+        },
+        {
+          "command": "weft.copyAbsoluteFilePath",
+          "when": "view == weft.files && viewItem == weftFile",
+          "group": "copy@2"
+        },
+        {
+          "command": "weft.copyRefName",
+          "when": "view == weft.refs && viewItem == weftRef",
+          "group": "copy@1"
+        },
+        {
+          "command": "weft.copyFullRefName",
+          "when": "view == weft.refs && viewItem == weftRef",
+          "group": "copy@2"
         },
         {
           "command": "weft.checkoutRef",

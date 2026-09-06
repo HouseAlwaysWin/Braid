@@ -28,6 +28,9 @@ Working:
 - One file's history: right-click it in **Commit Files** for **Show File History**, and the graph
   narrows to that path with renames followed - so it does not stop where the file was moved. The
   path search has a `follow` switch of its own for a path you type
+- Right-click to copy: a commit's hash or subject, a branch or tag's name - and its full ref name,
+  which is the one git resolves rather than the one you read. Files in **Commit Files** copy their
+  path either way round, relative or absolute
 - Compare two commits: right-click one for **Select for Compare**, then another for **Compare
   with …** - the two steps VS Code's own file compare uses, and ctrl-click does the same pair
   without the menu. The Commit Files section fills with what they differ by, and the pane says how

@@ -83,6 +83,12 @@ async function findRepository(git: Git): Promise<RepoInfo | null> {
   return null;
 }
 
+/** Put something on the clipboard and say so, briefly - a copy with no feedback reads as a no-op. */
+async function copy(text: string): Promise<void> {
+  await vscode.env.clipboard.writeText(text);
+  void vscode.window.setStatusBarMessage(`Weft: copied ${text}`, 2000);
+}
+
 /** Run an action that targets the repository, which needs a graph to run against. */
 function repoAction(id: string): void {
   const panel = WeftPanel.active();
@@ -234,6 +240,45 @@ function start(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('weft.showAllRefs', () => refs.showAll()),
 
     vscode.commands.registerCommand('weft.showOnlyListedRefs', () => refs.showOnlyListed()),
+
+    /*
+     * Copying, in the two trees. The graph's own menu answers its copies itself - it has the text
+     * already and nothing about them is the host's business - but a tree view's menu is contributed
+     * through the manifest, so these need commands to point at.
+     */
+    vscode.commands.registerCommand('weft.copyRefName', async (node: unknown) => {
+      const target = refs.targetOf(node);
+
+      if (target !== null) {
+        await copy(target.label);
+      }
+    }),
+
+    vscode.commands.registerCommand('weft.copyFullRefName', async (node: unknown) => {
+      const target = refs.targetOf(node);
+
+      if (target !== null) {
+        await copy(target.refName);
+      }
+    }),
+
+    vscode.commands.registerCommand('weft.copyFilePath', async (node: unknown) => {
+      const target = files.target(node);
+
+      if (target !== null) {
+        await copy(target.file.path);
+      }
+    }),
+
+    vscode.commands.registerCommand('weft.copyAbsoluteFilePath', async (node: unknown) => {
+      const target = files.target(node);
+
+      if (target !== null) {
+        // The path on this machine, separators and all, because that is what it is for: pasting
+        // into something that is not git.
+        await copy(vscode.Uri.joinPath(vscode.Uri.file(target.repo), target.file.path).fsPath);
+      }
+    }),
 
     /*
      * The sidebar's own actions. They take the node the tree hands them rather than a name typed

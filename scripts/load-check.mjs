@@ -10,7 +10,7 @@
  */
 import { createRequire } from 'node:module';
 import Module from 'node:module';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -71,6 +71,7 @@ const problems = [];
 const contentProviders = new Map();
 const diffsOpened = [];
 const contextKeys = new Map();
+const copied = [];
 let statusBarItem = null;
 let viewStateHandler = null;
 let panelObject = null;
@@ -268,7 +269,7 @@ const vscodeStub = {
   extensions: {
     getExtension: () => undefined,
   },
-  env: { clipboard: { writeText: async () => {} } },
+  env: { clipboard: { writeText: async (text) => void copied.push(text) } },
 };
 
 // The bundle does `require('vscode')`, which only exists inside the extension host.
@@ -1288,6 +1289,65 @@ if (watchTest) {
 
   if ((walks().pop() ?? '').includes('--first-parent')) {
     problems.push('turning first parent off left it on the command line');
+  }
+}
+
+/*
+ * Copying, from both trees. Each command is handed the node the tree would hand it, so what is
+ * being checked is the whole path from a row to the clipboard - not that a string was formatted.
+ */
+{
+  const refsProvider = treeProviders.get('weft.refs');
+  const filesProvider = treeProviders.get('weft.files');
+
+  const groups = refsProvider.getChildren();
+  const ref = refsProvider.getChildren(groups.find((g) => g.id === 'heads'))[0];
+
+  copied.length = 0;
+  await commands.get('weft.copyRefName')(ref);
+  await commands.get('weft.copyFullRefName')(ref);
+
+  console.log('\ncopy (ref)     :', copied.join('  |  '));
+
+  if (copied[0] !== ref.label) {
+    problems.push(`copying a branch name gave ${copied[0]}, expected ${ref.label}`);
+  }
+
+  // The full name is what git wants and the label is not: `main` reads, `refs/heads/main` resolves.
+  if (copied[1] !== ref.refName || !String(copied[1]).startsWith('refs/')) {
+    problems.push(`copying a full ref name gave ${copied[1]}, expected ${ref.refName}`);
+  }
+
+  const nodes = [];
+  const walk = (list) => {
+    for (const node of list) {
+      if (node.kind === 'file') {
+        nodes.push(node);
+      } else {
+        walk(filesProvider.getChildren(node));
+      }
+    }
+  };
+
+  walk(filesProvider.getChildren());
+
+  if (nodes.length === 0) {
+    problems.push('no file to copy a path from');
+  } else {
+    copied.length = 0;
+    await commands.get('weft.copyFilePath')(nodes[0]);
+    await commands.get('weft.copyAbsoluteFilePath')(nodes[0]);
+
+    console.log('copy (file)    :', copied.join('  |  '));
+
+    if (copied[0] !== nodes[0].file.path) {
+      problems.push(`copying a path gave ${copied[0]}, expected ${nodes[0].file.path}`);
+    }
+
+    // Absolute means absolute: rooted at the repository, not the same string with a slash on it.
+    if (!String(copied[1]).endsWith(nodes[0].file.path.replace(/\//g, sep)) || copied[1] === copied[0]) {
+      problems.push(`copying an absolute path gave ${copied[1]}, which is not ${nodes[0].file.path} under the repository`);
+    }
   }
 }
 
