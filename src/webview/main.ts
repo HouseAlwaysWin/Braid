@@ -16,7 +16,7 @@
 import type { GraphDelta, PathDelta } from '../graph/layout.ts';
 import type { GraphDot, Point } from '../graph/model.ts';
 import { DotKind } from '../graph/model.ts';
-import type { CommitInfo } from '../protocol.ts';
+import type { CommitInfo, RefEntry } from '../protocol.ts';
 import type { DateRange } from '../git/dates.ts';
 import type { Upstream } from '../git/repoState.ts';
 import type { Search, SearchMode, SearchToggle } from '../git/search.ts';
@@ -49,6 +49,12 @@ const clearSortEl = document.getElementById('clear-sort') as HTMLButtonElement;
 const clearFiltersEl = document.getElementById('clear-filters') as HTMLButtonElement;
 const compareMarkEl = document.getElementById('compare-mark') as HTMLButtonElement;
 const upstreamEl = document.getElementById('upstream') as HTMLElement;
+const branchButton = document.getElementById('branch-button') as HTMLButtonElement;
+const branchCurrent = document.getElementById('branch-current') as HTMLElement;
+const branchList = document.getElementById('branch-list') as HTMLElement;
+const branchFilter = document.getElementById('branch-filter') as HTMLInputElement;
+const branchRows = document.getElementById('branch-rows') as HTMLElement;
+const branchEmpty = document.getElementById('branch-empty') as HTMLElement;
 const firstParentEl = document.getElementById('first-parent') as HTMLButtonElement;
 const viewport = document.getElementById('viewport') as HTMLElement;
 const spacer = document.getElementById('spacer') as HTMLElement;
@@ -648,6 +654,141 @@ function renderOperation(
 }
 
 let menuEl: HTMLElement | null = null;
+
+/*
+ * The branch menu in the header.
+ *
+ * Every ref the sidebar knows about, with the tick that decides whether the graph draws it and a
+ * name that checks it out. Both were already possible - the ticks in Branches & Tags, and Checkout
+ * from a badge - but both needed the sidebar open, or the branch to be sitting on a row that
+ * happens to be on screen. Neither is true when the branch you want is the one you cannot see.
+ *
+ * The list is whatever the host last sent. Nothing is cached across repositories and nothing is
+ * computed here: the ticks are the sidebar's state, and a toggle goes straight back to it.
+ */
+let refEntries: readonly RefEntry[] = [];
+let headBranch: string | null = null;
+
+function branchMenuOpen(): boolean {
+  return !branchList.hidden;
+}
+
+function closeBranchMenu(): void {
+  branchList.hidden = true;
+  branchButton.setAttribute('aria-expanded', 'false');
+}
+
+/** One row: a tick that hides, and a name that checks out. */
+function branchRow(entry: RefEntry): HTMLElement {
+  const row = document.createElement('div');
+  const here = entry.kind === 'local' && entry.label === headBranch;
+
+  row.className = `branch-row${here ? ' current' : ''}${entry.visible ? '' : ' off'}`;
+
+  const draw = document.createElement('input');
+  draw.type = 'checkbox';
+  draw.className = 'branch-draw';
+  draw.checked = entry.visible;
+  draw.title = entry.visible ? `Stop drawing ${entry.label}` : `Draw ${entry.label}`;
+  draw.setAttribute('aria-label', draw.title);
+  draw.addEventListener('change', () => {
+    // Straight to the host, which owns the one hidden set. The reload it triggers sends the list
+    // back, so nothing here has to guess what the new state is.
+    vscode.postMessage({ type: 'setRefVisible', refName: entry.refName, visible: draw.checked });
+  });
+
+  const name = document.createElement('button');
+  name.type = 'button';
+  name.className = 'branch-name';
+  name.textContent = entry.label;
+  name.title = entry.refName;
+
+  if (here) {
+    // Checking out the branch you are on does nothing, and offering it suggests otherwise.
+    name.disabled = true;
+  } else {
+    name.addEventListener('click', () => {
+      closeBranchMenu();
+      vscode.postMessage({
+        type: 'runAction',
+        id: entry.kind === 'remote' ? 'weft.checkoutRemoteBranch' : 'weft.checkoutBranch',
+        target: { kind: 'ref', refName: entry.refName, label: entry.label, refKind: entry.kind },
+      });
+    });
+  }
+
+  row.append(draw, name);
+
+  if (here) {
+    row.append(span('branch-here', 'here'));
+  }
+
+  return row;
+}
+
+function renderBranchMenu(): void {
+  const needle = branchFilter.value.trim().toLowerCase();
+  const matches = refEntries.filter(
+    (entry) => entry.kind !== 'tag' && entry.label.toLowerCase().includes(needle),
+  );
+
+  branchRows.replaceChildren();
+  branchEmpty.hidden = matches.length > 0;
+
+  // Local first: it is the half you check out. Remote branches are listed under their own heading
+  // rather than mixed in, because `origin/main` and `main` are different things to switch to.
+  for (const kind of ['local', 'remote'] as const) {
+    const group = matches.filter((entry) => entry.kind === kind);
+
+    if (group.length === 0) {
+      continue;
+    }
+
+    branchRows.append(span('branch-group', kind === 'local' ? 'Local' : 'Remote'));
+
+    for (const entry of group) {
+      branchRows.append(branchRow(entry));
+    }
+  }
+}
+
+function openBranchMenu(): void {
+  branchFilter.value = '';
+  renderBranchMenu();
+  branchList.hidden = false;
+  branchButton.setAttribute('aria-expanded', 'true');
+  branchFilter.focus();
+}
+
+/** What the button says: the branch HEAD is on, or that there is not one. */
+function renderBranchButton(): void {
+  branchCurrent.textContent = headBranch ?? 'detached';
+  branchButton.classList.toggle('detached', headBranch === null);
+  branchButton.title =
+    headBranch === null
+      ? 'HEAD is not on a branch. Pick one to check out, or tick which branches the graph draws.'
+      : `On ${headBranch}. Pick another to check it out, or tick which branches the graph draws.`;
+}
+
+branchButton.addEventListener('click', () => {
+  if (branchMenuOpen()) {
+    closeBranchMenu();
+  } else {
+    openBranchMenu();
+  }
+});
+
+branchFilter.addEventListener('input', renderBranchMenu);
+
+branchFilter.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    // Handled here so it closes the menu rather than reaching the document handler, which would
+    // read Escape as "clear the selection" and leave the menu open.
+    event.stopPropagation();
+    closeBranchMenu();
+    branchButton.focus();
+  }
+});
 
 function closeMenu(): void {
   menuEl?.remove();
@@ -1465,6 +1606,19 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       showHistory(message.path);
       break;
 
+    case 'refs':
+      refEntries = message.refs;
+      headBranch = message.branch;
+      renderBranchButton();
+
+      // Only while it is open: rebuilding a closed menu is work nobody asked for, and rebuilding an
+      // open one is the point - a checkout or a tick lands here as the next list.
+      if (branchMenuOpen()) {
+        renderBranchMenu();
+      }
+
+      break;
+
     case 'menu':
       renderMenu(message.target, message.items, message.x, message.y);
       break;
@@ -1497,7 +1651,15 @@ document.addEventListener('mousedown', (event) => {
   if (menuEl !== null && !menuEl.contains(event.target as Node)) {
     closeMenu();
   }
+
+  const target = event.target as Node;
+
+  if (branchMenuOpen() && !branchList.contains(target) && !branchButton.contains(target)) {
+    closeBranchMenu();
+  }
 });
+
+window.addEventListener('blur', closeBranchMenu);
 window.addEventListener('resize', schedule);
 
 /*
@@ -1957,6 +2119,11 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     // Innermost first: the menu, then the comparison, then the pane. Closing more than one of them
     // at a time would be one keystroke doing something the user did not ask for.
+    if (branchMenuOpen()) {
+      closeBranchMenu();
+      return;
+    }
+
     if (menuEl !== null) {
       closeMenu();
       event.preventDefault();

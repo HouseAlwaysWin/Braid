@@ -23,6 +23,19 @@
 export const BODY_MARKUP = `<header id="header">
   <span id="title">Weft</span>
   <span id="upstream" hidden></span>
+  <span id="branch-menu">
+    <button id="branch-button" type="button" aria-haspopup="true" aria-expanded="false"
+      title="Switch to a branch, or choose which branches the graph draws. The ticks are the same ones as in Branches &amp; Tags.">
+      <span id="branch-current">no branch</span>
+      <span class="chevron" aria-hidden="true">&#9662;</span>
+    </button>
+    <div id="branch-list" hidden>
+      <input id="branch-filter" type="search" placeholder="Filter branches" spellcheck="false"
+        aria-label="Filter the branch list">
+      <div id="branch-rows"></div>
+      <div id="branch-empty" hidden>No branch matches.</div>
+    </div>
+  </span>
   <span id="status">loading…</span>
   <button id="compare-mark" type="button" hidden></button>
   <button id="clear-filters" type="button" hidden

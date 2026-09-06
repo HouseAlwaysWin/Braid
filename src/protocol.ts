@@ -46,6 +46,20 @@ export interface Row {
   readonly uncommitted?: boolean;
 }
 
+/**
+ * One ref, as the branch menu in the header needs it.
+ *
+ * `visible` is the same switch as the tick in Branches & Tags, not a second one: the header is
+ * another way into one piece of state, and two controls disagreeing about which branches are drawn
+ * would be worse than having only the one.
+ */
+export interface RefEntry {
+  readonly label: string;
+  readonly refName: string;
+  readonly kind: 'local' | 'remote' | 'tag';
+  readonly visible: boolean;
+}
+
 export type HostMessage =
   | {
       readonly type: 'init';
@@ -92,6 +106,13 @@ export type HostMessage =
       readonly fetchedAt: number | null;
     }
   /** A fresh load is starting. `filtered` is whether anything is narrowing it, from any source. */
+  /** Every ref there is, so the header can offer them without asking for them. */
+  | {
+      readonly type: 'refs';
+      /** The branch HEAD is on, or null when it is detached. */
+      readonly branch: string | null;
+      readonly refs: readonly RefEntry[];
+    }
   | { readonly type: 'reset'; readonly filtered: boolean }
   /** Every filter has been dropped at once; put the boxes back without asking for another walk. */
   | { readonly type: 'filtersCleared' }
@@ -165,5 +186,7 @@ export type WebviewMessage =
   /** Right-click: the host decides what is on the menu, because availability depends on repo state. */
   | { readonly type: 'requestMenu'; readonly target: Target; readonly x: number; readonly y: number }
   | { readonly type: 'runAction'; readonly id: string; readonly target: Target }
+  /** Draw this ref, or stop drawing it - the same switch the sidebar's tick sets. */
+  | { readonly type: 'setRefVisible'; readonly refName: string; readonly visible: boolean }
   /** Hand a conflicted file to VS Code, whose merge editor is better at this than anything here. */
   | { readonly type: 'openConflict'; readonly path: string };

@@ -8,6 +8,7 @@
  *
  *   npm run build && node scripts/preview.mjs [repo] [--light]
  */
+import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 import { Git } from '../src/git/exec.ts';
@@ -66,6 +67,33 @@ messages.push({
   branch: state.branch,
   upstream: state.upstream,
   fetchedAt: state.fetchedAt,
+});
+
+/*
+ * The refs, for the header's branch menu. Read from the real repository like everything else here,
+ * and all ticked - the preview has no sidebar to have unticked anything in.
+ */
+const refLines = execFileSync('git', ['for-each-ref', '--format=%(refname)'], {
+  cwd: repo.root,
+  encoding: 'utf8',
+})
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line.length > 0);
+
+messages.push({
+  type: 'refs',
+  branch: state.branch,
+  refs: refLines.map((refName) => ({
+    refName,
+    label: refName.replace(/^refs\/(heads|remotes|tags)\//, ''),
+    kind: refName.startsWith('refs/tags/')
+      ? 'tag'
+      : refName.startsWith('refs/remotes/')
+        ? 'remote'
+        : 'local',
+    visible: true,
+  })),
 });
 
 messages.push({ type: 'done', total: loader.rowCount, elapsedMs: 0 });

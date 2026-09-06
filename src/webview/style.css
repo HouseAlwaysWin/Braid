@@ -863,3 +863,165 @@ body.vscode-high-contrast.author-tint .row .author {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/*
+ * The branch menu in the header.
+ *
+ * Two controls in one row, which is the whole point of it: the tick decides whether a branch is
+ * drawn and the name switches to it. Keeping them apart matters - a click that might check out a
+ * branch or might only hide it, depending on where in the row it landed, is the kind of control
+ * people stop trusting.
+ *
+ * The ticks are the same state as the ones in Branches & Tags. This is a second way in, not a
+ * second copy.
+ */
+#branch-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+#branch-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 22ch;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+#branch-button:hover,
+#branch-button[aria-expanded='true'] {
+  border-color: var(--vscode-panel-border, #454545);
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+#branch-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Detached, or a repository with no commits yet: there is no branch to name. */
+#branch-button.detached #branch-current {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+#branch-button .chevron {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+}
+
+#branch-list {
+  position: absolute;
+  z-index: 21;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 300px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border, #454545));
+  border-radius: 5px;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background, #252526));
+  color: var(--vscode-menu-foreground, var(--weft-fg));
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+#branch-list[hidden] {
+  display: none;
+}
+
+#branch-filter {
+  margin: 2px 6px 6px;
+  padding: 3px 6px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+}
+
+#branch-rows {
+  overflow-y: auto;
+}
+
+#branch-empty {
+  padding: 6px 14px;
+  color: var(--vscode-descriptionForeground);
+}
+
+#branch-empty[hidden] {
+  display: none;
+}
+
+.branch-group {
+  padding: 6px 14px 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 6px;
+}
+
+.branch-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* The tick, and nothing but the tick. Its own hit area, so it cannot be hit by accident. */
+.branch-draw {
+  flex: 0 0 auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* The name fills the rest of the row, so checking out is the easy target and hiding is the small
+   deliberate one. */
+.branch-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.branch-name:disabled {
+  cursor: default;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Where HEAD is. Not clickable, because checking out the branch you are on does nothing. */
+.branch-row.current .branch-name {
+  font-weight: 600;
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--weft-fg));
+}
+
+.branch-here {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Hidden branches stay legible - they are a state you can undo, not an absence. */
+.branch-row.off .branch-name {
+  opacity: 0.55;
+}

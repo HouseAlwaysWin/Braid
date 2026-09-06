@@ -1381,6 +1381,94 @@ if (watchTest) {
 }
 
 /*
+ * The header's branch menu, and the one piece of state it shares with the sidebar.
+ *
+ * The menu is a second way into the ticks in Branches & Tags, not a second copy of them. What that
+ * has to mean is checked from both ends here: the list the host sends reports what the tree
+ * believes, and a toggle arriving from the webview changes what the next walk is given.
+ */
+{
+  const refsProvider = treeProviders.get('weft.refs');
+  const sent = posted.filter((m) => m.type === 'refs').at(-1);
+
+  console.log(
+    '\nbranch menu    :',
+    sent === undefined ? 'NOTHING SENT' : `${sent.refs.length} refs, on ${sent.branch}`,
+  );
+
+  if (sent === undefined) {
+    problems.push('the header was never told what refs exist');
+  } else {
+    if (sent.branch !== 'main') {
+      problems.push(`the branch menu was told HEAD is on ${sent.branch}`);
+    }
+
+    // Every ref, not only the drawn ones: a menu that drops what it is hiding gives you no way to
+    // put it back.
+    if (sent.refs.length !== refsProvider.listRefs().length) {
+      problems.push(
+        `the menu was sent ${sent.refs.length} refs and the tree has ${refsProvider.listRefs().length}`,
+      );
+    }
+
+    const kinds = [...new Set(sent.refs.map((ref) => ref.kind))].sort();
+
+    if (kinds.join(',') !== 'local,remote,tag' && kinds.join(',') !== 'local,tag') {
+      problems.push(`the menu was sent refs of kinds ${kinds.join(', ')}`);
+    }
+  }
+
+  // --- and the toggle, arriving the way the webview sends it ---------------------------------
+  const victim = sent?.refs.find((ref) => ref.kind === 'local' && ref.label !== 'main');
+
+  if (victim === undefined) {
+    problems.push('no branch to hide from the header');
+  } else {
+    const walksBefore = posted.filter((m) => m.type === 'done').length;
+
+    await messageHandler({ type: 'setRefVisible', refName: victim.refName, visible: false });
+
+    const by = Date.now() + 10_000;
+    while (Date.now() < by && posted.filter((m) => m.type === 'done').length === walksBefore) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const walked = refsProvider.visibleRefs();
+    const hiddenNow = walked !== null && !walked.includes(victim.refName);
+    const tickOff = refsProvider
+      .getChildren(refsProvider.getChildren().find((g) => g.id === 'heads'))
+      .some((node) => node.refName === victim.refName && refsProvider.getTreeItem(node).checkboxState === 0);
+
+    console.log(
+      'hid from header:',
+      victim.label,
+      '| out of the walk:',
+      hiddenNow,
+      '| tick cleared:',
+      tickOff,
+      '| reloaded:',
+      posted.filter((m) => m.type === 'done').length > walksBefore,
+    );
+
+    if (!hiddenNow) {
+      problems.push(`hiding ${victim.label} from the header did not take it out of the walk`);
+    }
+
+    // The same state, so the sidebar has to agree without being told separately.
+    if (!tickOff) {
+      problems.push(`hiding ${victim.label} from the header left its tick set in the sidebar`);
+    }
+
+    if (posted.filter((m) => m.type === 'done').length === walksBefore) {
+      problems.push('hiding a branch from the header did not redraw the graph');
+    }
+
+    await commands.get('weft.showAllRefs')();
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+/*
  * The manifest's menus against the context values the trees actually emit.
  *
  * A `when` clause naming a context value nothing produces is a menu entry that silently is not

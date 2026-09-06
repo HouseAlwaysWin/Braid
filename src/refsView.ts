@@ -199,6 +199,45 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     return this.query;
   }
 
+  /**
+   * Every ref with whether it is drawn, for the header's branch menu.
+   *
+   * Separate from `listRefs` because that reports the group's display label, which is the right
+   * thing for a picker to show and the wrong thing to branch on.
+   */
+  listForMenu(): { label: string; refName: string; kind: 'local' | 'remote' | 'tag'; visible: boolean }[] {
+    return this.refs.map((ref) => ({
+      label: ref.label,
+      refName: ref.refName,
+      kind: ref.group.id === 'tags' ? 'tag' : ref.group.id === 'remotes' ? 'remote' : 'local',
+      visible: !this.hidden.has(ref.refName),
+    }));
+  }
+
+  /**
+   * Switch one ref on or off, from wherever asked.
+   *
+   * This is what the sidebar's own tick calls into, so the header menu and the tree cannot drift:
+   * there is one hidden set, one event, and one reload.
+   */
+  setVisible(refName: string, visible: boolean): void {
+    const was = this.hidden.has(refName);
+
+    if (was === !visible) {
+      return;
+    }
+
+    if (visible) {
+      this.hidden.delete(refName);
+    } else {
+      this.hidden.add(refName);
+    }
+
+    this.changed.fire(undefined);
+    this.updateMessage();
+    this.filterChanged.fire();
+  }
+
   /** Every ref, for a picker to offer as completions. */
   listRefs(): { label: string; refName: string; group: string }[] {
     return this.refs.map((ref) => ({

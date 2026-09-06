@@ -21,6 +21,8 @@ Working:
   the tree as you save, without re-walking the history to do it
 - Where the branch stands against the one it tracks, and how old that answer is:
   `main ↑2 ↓1 fetched 3h ago` beside the title. The age is not decoration - see the design note
+- Right-click a local branch or a tag in **Branches & Tags** to delete it. Remote branches are not
+  deletable from there: that is a push to a server, not a change to this clone
 - Fetch on a timer if you want one (`weft.autoFetchMinutes`, off by default). Weft also picks up
   fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
@@ -28,6 +30,9 @@ Working:
 - One file's history: right-click it in **Commit Files** for **Show File History**, and the graph
   narrows to that path with renames followed - so it does not stop where the file was moved. The
   path search has a `follow` switch of its own for a path you type
+- The branch button in the header lists every branch: click a name to check it out, or use the
+  ticks to choose which branches the graph draws. The ticks are the same ones as in **Branches &
+  Tags**, not a second copy
 - Right-click to copy: a commit's hash or subject, a branch or tag's name - and its full ref name,
   which is the one git resolves rather than the one you read. Files in **Commit Files** copy their
   path either way round, relative or absolute

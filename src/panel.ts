@@ -19,7 +19,7 @@ import type { Search } from './git/search.ts';
 import { filterArgs } from './git/search.ts';
 import type { DateRange } from './git/dates.ts';
 import { dateArgs } from './git/dates.ts';
-import type { HostMessage, Row, WebviewMessage } from './protocol.ts';
+import type { HostMessage, RefEntry, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
 
 /**
@@ -29,6 +29,10 @@ import { BODY_MARKUP } from './webview/markup.ts';
 export interface FilterSource {
   refs(): string[] | null;
   authorArgs(): string[];
+  /** Every ref with whether it is drawn, for the header's branch menu. */
+  listRefs(): RefEntry[];
+  /** Switch one on or off. The same call the sidebar's own tick makes, so the two cannot drift. */
+  setRefVisible(refName: string, visible: boolean): void;
   /**
    * Drop everything the sidebar is narrowing by, without announcing it. The caller reloads once,
    * rather than each view asking for a reload of its own on the way past.
@@ -416,6 +420,14 @@ export class WeftPanel {
       case 'runAction':
         await this.runAction(message.id, message.target);
         break;
+      case 'setRefVisible':
+        /*
+         * Straight through to the sidebar's own state. It fires the filter event, which is already
+         * wired to reload every graph - so this posts nothing back and waits for nothing: the
+         * reload that follows carries the new list with it.
+         */
+        this.filters.setRefVisible(message.refName, message.visible);
+        break;
       case 'openConflict':
         await this.openConflict(message.path);
         break;
@@ -683,6 +695,18 @@ export class WeftPanel {
       upstream: tree.upstream,
       fetchedAt: tree.fetchedAt,
     });
+
+    this.postRefs(tree.branch);
+  }
+
+  /**
+   * The ref list, for the header's branch menu.
+   *
+   * Read from the same source the walk reads its filter from, at the same moment - a menu showing
+   * a tick that the next reload disagrees with is worse than no menu.
+   */
+  private postRefs(branch: string | null): void {
+    this.post({ type: 'refs', branch, refs: this.filters.listRefs() });
   }
 
   /**
