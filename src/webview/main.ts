@@ -47,6 +47,7 @@ const statusEl = document.getElementById('status') as HTMLElement;
 const columnsEl = document.getElementById('columns') as HTMLElement;
 const clearSortEl = document.getElementById('clear-sort') as HTMLButtonElement;
 const clearFiltersEl = document.getElementById('clear-filters') as HTMLButtonElement;
+const compareMarkEl = document.getElementById('compare-mark') as HTMLButtonElement;
 const upstreamEl = document.getElementById('upstream') as HTMLElement;
 const firstParentEl = document.getElementById('first-parent') as HTMLButtonElement;
 const viewport = document.getElementById('viewport') as HTMLElement;
@@ -188,17 +189,20 @@ let headDot: GraphDot | null = null;
 let selected = -1;
 
 /**
- * The commit a comparison is measured from, or -1 for none.
+ * The commit a comparison is measured from, by sha, or null for none.
  *
  * Deliberately not the selection. Selecting is how you read a commit - its message, its files - and
  * borrowing that to mean "and this is what I want to compare against" made the other end of every
- * comparison whichever row had last been read, which is not a choice anybody made. It is marked
- * once, on purpose, and stays marked until it is used or dropped.
+ * comparison whichever row had last been read, which is not a choice anybody made.
+ *
+ * By sha rather than by row, because a row number is only true until the next sort, filter or
+ * reload - and the way to reach a commit a thousand rows away is to search for it, which is exactly
+ * the act that would have thrown the mark away.
  */
-let compareFrom = -1;
+let compareFrom: string | null = null;
 
 /** The other end, while a comparison is on screen. */
-let comparedTo = -1;
+let comparedTo: string | null = null;
 const paths = new Map<number, { color: number; points: Point[] }>();
 let dots: GraphDot[] = [];
 let palette: string[] = [];
@@ -290,12 +294,13 @@ function renderRows(indent: number): void {
     }
 
     const el = document.createElement('div');
-    const inComparison = comparedTo >= 0 && (i === compareFrom || i === comparedTo);
+    const isEnd = row.sha === compareFrom || row.sha === comparedTo;
+    const inComparison = comparedTo !== null && isEnd;
 
     el.className = [
       'row',
       i === selected ? 'selected' : '',
-      inComparison ? 'compared' : i === compareFrom ? 'compare-anchor' : '',
+      inComparison ? 'compared' : row.sha === compareFrom ? 'compare-anchor' : '',
     ]
       .filter((name) => name.length > 0)
       .join(' ');
@@ -373,10 +378,10 @@ function renderRows(indent: number): void {
     el.addEventListener('click', (event) => {
       // Ctrl anywhere, Cmd on a Mac: the same two steps as the menu, without the menu.
       if (event.ctrlKey || event.metaKey) {
-        if (compareFrom < 0 || compareFrom === i) {
-          markForCompare(i);
+        if (compareFrom === null || compareFrom === row.sha) {
+          markForCompare(row.sha);
         } else {
-          compareWith(i);
+          compareWith(row.sha);
         }
 
         return;
@@ -414,17 +419,48 @@ function scrollRowIntoView(index: number): void {
 }
 
 /** Mark a commit as the one to measure from. Nothing is compared yet; this is half a question. */
-function markForCompare(index: number): void {
-  const row = view[index];
-
-  if (row === undefined || row.uncommitted === true) {
+function markForCompare(sha: string): void {
+  if (sha.length === 0) {
     return;
   }
 
-  compareFrom = index;
-  comparedTo = -1;
+  compareFrom = sha;
+  comparedTo = null;
+  updateCompareMark();
   schedule();
 }
+
+/**
+ * The marked commit, said somewhere that is always on screen.
+ *
+ * A mark drawn only on its own row is a mark you lose the moment you scroll past it - and the two
+ * commits worth comparing are rarely both on screen at once, which is the whole reason the mark
+ * exists. Clicking goes back to it.
+ */
+function updateCompareMark(): void {
+  if (compareFrom === null) {
+    compareMarkEl.hidden = true;
+    return;
+  }
+
+  const short = compareFrom.slice(0, 8);
+
+  compareMarkEl.textContent =
+    comparedTo === null ? `compare from ${short}` : `${short} → ${comparedTo.slice(0, 8)}`;
+
+  compareMarkEl.title =
+    comparedTo === null
+      ? `Marked to compare from. Right-click another commit for "Compare with ${short}", or click here to go back to it. Escape drops the mark.`
+      : `Comparing ${compareFrom} with ${comparedTo}. Click to go back to the first. Escape drops both.`;
+
+  compareMarkEl.hidden = false;
+}
+
+compareMarkEl.addEventListener('click', () => {
+  if (compareFrom !== null) {
+    jumpTo(compareFrom);
+  }
+});
 
 /**
  * Compare the marked commit with another one.
@@ -434,29 +470,28 @@ function markForCompare(index: number): void {
  * two commits on different branches have no order between them, and the graph's own is only the
  * order git happened to walk them in.
  */
-function compareWith(index: number): void {
-  const from = view[compareFrom];
-  const to = view[index];
-
-  if (from === undefined || to === undefined || from.uncommitted === true || to.uncommitted === true) {
+function compareWith(sha: string): void {
+  if (compareFrom === null || sha.length === 0 || sha === compareFrom) {
     return;
   }
 
-  comparedTo = index;
-  vscode.postMessage({ type: 'compare', from: from.sha, to: to.sha });
+  comparedTo = sha;
+  vscode.postMessage({ type: 'compare', from: compareFrom, to: sha });
+  updateCompareMark();
   schedule();
 }
 
 /** Back to a single commit, and to no commit marked. */
 function clearComparison(): void {
-  if (comparedTo < 0 && compareFrom < 0) {
+  if (comparedTo === null && compareFrom === null) {
     return;
   }
 
-  const wasComparing = comparedTo >= 0;
+  const wasComparing = comparedTo !== null;
 
-  compareFrom = -1;
-  comparedTo = -1;
+  compareFrom = null;
+  comparedTo = null;
+  updateCompareMark();
 
   if (!wasComparing) {
     // Only a mark was dropped; the pane is showing whatever it was showing, and still should be.
@@ -484,7 +519,8 @@ function select(index: number): void {
    * mind about what you wanted to measure from, and having to re-mark it after every glance would
    * make the two-step worse than the accident it replaced.
    */
-  comparedTo = -1;
+  comparedTo = null;
+  updateCompareMark();
 
   if (index === selected) {
     // Clicking the row that is already selected is how you ask for the pane back after closing it.
@@ -642,31 +678,21 @@ function localMenuItems(target: Target): { label: string; run: () => void }[] {
     return [];
   }
 
-  const index = view.findIndex((row) => row.sha === target.sha);
-
-  if (index < 0) {
-    return [];
-  }
+  const sha = target.sha;
 
   // Nothing marked yet: this is the first of the two steps.
-  if (compareFrom < 0) {
-    return [{ label: 'Select for Compare', run: () => markForCompare(index) }];
-  }
-
-  const from = view[compareFrom];
-
-  if (from === undefined) {
-    return [{ label: 'Select for Compare', run: () => markForCompare(index) }];
+  if (compareFrom === null) {
+    return [{ label: 'Select for Compare', run: () => markForCompare(sha) }];
   }
 
   // Right-clicking the marked commit itself: the only useful thing to offer is letting it go.
-  if (index === compareFrom) {
+  if (sha === compareFrom) {
     return [{ label: 'Clear Compare Selection', run: () => clearComparison() }];
   }
 
   return [
-    { label: `Compare with ${from.sha.slice(0, 8)}`, run: () => compareWith(index) },
-    { label: 'Select for Compare', run: () => markForCompare(index) },
+    { label: `Compare with ${compareFrom.slice(0, 8)}`, run: () => compareWith(sha) },
+    { label: 'Select for Compare', run: () => markForCompare(sha) },
   ];
 }
 
@@ -1207,10 +1233,8 @@ function applyView(): void {
   // the one row that is about now rather than about the past.
   view = working.total === 0 ? history : [uncommittedRow(), ...history];
 
-  // Row numbers are about to mean something else; a mark pinned to the old ones would sit on a row
-  // nobody picked.
-  compareFrom = -1;
-  comparedTo = -1;
+  // Nothing to do: the mark is a sha, so it survives a sort, a filter and the reload after one -
+  // which is the only way to reach a commit far enough away to be worth marking one for.
 
   selected = keepUncommitted
     ? 0
@@ -1292,8 +1316,6 @@ function reset(): void {
   complete = false;
   working = { total: 0, staged: 0, unstaged: 0, untracked: 0, conflicted: 0, branch: null };
   headDot = null;
-  compareFrom = -1;
-  comparedTo = -1;
   remote = { upstream: null, branch: null, fetchedAt: null };
   upstreamEl.hidden = true;
   dots = [];
@@ -1844,7 +1866,7 @@ document.addEventListener('keydown', (event) => {
       return;
     }
 
-    if (comparedTo >= 0 || compareFrom >= 0) {
+    if (comparedTo !== null || compareFrom !== null) {
       clearComparison();
       event.preventDefault();
       return;
@@ -1890,6 +1912,7 @@ restoreViewState();
 updateColumns();
 updateSearchToggles();
 updateFirstParent();
+updateCompareMark();
 refreshHighlight();
 
 // The filters go out with the handshake rather than as a second message, so the host walks the

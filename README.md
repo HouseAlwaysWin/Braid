@@ -29,7 +29,9 @@ Working:
   with …** - the two steps VS Code's own file compare uses, and ctrl-click does the same pair
   without the menu. The Commit Files section fills with what they differ by, and the pane says how
   far apart they are: a count for each side, because two commits picked off a graph are not always
-  one behind the other. Escape drops both
+  one behind the other. The marked commit stays named in the title bar and one click goes back to
+  it, because the two commits worth comparing are rarely both on screen - and the mark is held by
+  hash, so searching for the far one does not throw it away. Escape drops both
 - Click a file there to open it in VS Code's own diff editor, renames included
 - Search by message, author, committer, diff content (`-G`) or path, pushed down into `git log`.
   Match case, regular expression, all-words and invert are switches inside the box, each offered

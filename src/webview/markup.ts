@@ -24,6 +24,7 @@ export const BODY_MARKUP = `<header id="header">
   <span id="title">Braid</span>
   <span id="upstream" hidden></span>
   <span id="status">loading…</span>
+  <button id="compare-mark" type="button" hidden></button>
   <button id="clear-filters" type="button" hidden
     title="Drop the search, the date range, and the branch and author filters in Source Control. The sort is left alone.">clear filters</button>
   <button id="clear-sort" type="button" hidden

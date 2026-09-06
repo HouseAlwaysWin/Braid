@@ -211,7 +211,8 @@ body.flat #graph {
  * state the reader may not have meant to be in.
  */
 #clear-sort,
-#clear-filters {
+#clear-filters,
+#compare-mark {
   padding: 0 6px;
   border: 1px solid var(--vscode-panel-border, #454545);
   border-radius: 3px;
@@ -223,7 +224,8 @@ body.flat #graph {
 }
 
 #clear-sort:hover,
-#clear-filters:hover {
+#clear-filters:hover,
+#compare-mark:hover {
   color: var(--braid-fg);
   border-color: var(--vscode-focusBorder, #0078d4);
 }
@@ -406,6 +408,11 @@ body.vscode-high-contrast.author-tint .row .author {
 .row.compared {
   background: var(--vscode-list-inactiveSelectionBackground, rgba(127, 127, 127, 0.22));
   box-shadow: inset 2px 0 0 var(--vscode-charts-purple, #b180d7);
+}
+
+/* The same purple that marks the rows, so the chip and the margin read as one thing. */
+#compare-mark {
+  border-color: var(--vscode-charts-purple, #b180d7);
 }
 
 .range-arrow {
