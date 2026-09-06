@@ -76,6 +76,12 @@ const contentProviders = new Map();
 const diffsOpened = [];
 const contextKeys = new Map();
 const copied = [];
+const confirmations = [];
+const progressTitles = [];
+const statusMessages = [];
+
+/** Whether the stub says yes to a confirmation. A run needs both answers to prove a refusal. */
+let confirmed = true;
 
 /*
  * Settings, so that a default is not the only value any of them can have. Every `get` used to
@@ -222,10 +228,22 @@ const vscodeStub = {
       dispose() {},
     }),
     showInformationMessage: (m) => problems.push(`unexpected info message: ${m}`),
-    // Async, like the real one: `ui.confirm` awaits what comes back from it.
-    showWarningMessage: async (m) => {
-      problems.push(`unexpected warning: ${m}`);
-      return undefined;
+    /*
+     * A warning with buttons is a confirmation, and this answers it with the first one - which is
+     * how a user gets past `ui.confirm`. Until this existed every confirmation returned undefined,
+     * every tier-2 action read that as "cancelled", and nothing that asks before it acts had ever
+     * run to completion here.
+     *
+     * A warning with no buttons is still nobody's plan, and still a failure.
+     */
+    showWarningMessage: async (m, options, ...choices) => {
+      if (choices.length === 0) {
+        problems.push(`unexpected warning: ${m}`);
+        return undefined;
+      }
+
+      confirmations.push({ message: m, detail: options?.detail ?? '', answered: choices[0] });
+      return confirmed ? choices[0] : undefined;
     },
     // Activation reports its own failure through this one, so it has to exist here - and anything
     // arriving on it is a failure by definition.
@@ -233,7 +251,23 @@ const vscodeStub = {
       problems.push(`unexpected error message: ${m}`);
       return undefined;
     },
-    setStatusBarMessage: () => ({ dispose() {} }),
+    setStatusBarMessage: (message) => {
+      statusMessages.push(message);
+      return { dispose() {} };
+    },
+
+    /*
+     * Runs the work, which is the whole of what a progress notification does that matters here. The
+     * token never cancels: nothing in this run is cancelled, and a token that fires would be
+     * inventing a user who pressed something.
+     */
+    withProgress: (options, task) => {
+      progressTitles.push(options.title);
+      return task({ report() {} }, {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose() {} }),
+      });
+    },
     createQuickPick: () => {
       const handlers = {};
       const picker = {
@@ -303,6 +337,9 @@ const vscodeStub = {
     },
   },
   StatusBarAlignment: { Left: 1, Right: 2 },
+  // Real values, because `ui.progress` reads one of them. Without these every action that reports
+  // progress - which is every action that touches the repository - threw before it started.
+  ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
   EventEmitter: StubEmitter,
   ThemeIcon: class { constructor(id, color) { this.id = id; this.color = color; } },
   ThemeColor: class { constructor(id) { this.id = id; } },
@@ -1963,6 +2000,58 @@ if (watchTest) {
   settings.set('weft.statusBar.enabled', true);
   configurationChanged.fire(['weft.statusBar.enabled']);
   await new Promise((r) => setTimeout(r, 400));
+}
+
+/*
+ * Deleting a branch from the tree, end to end.
+ *
+ * Not "the action works" - `write.test.ts` covers that against real repositories. What is covered
+ * here is the wiring either side of it: that a tree node reaches the right action through the
+ * panel, and that the two places showing the branch agree afterwards. A delete that removes the ref
+ * and leaves it listed is indistinguishable, from the outside, from a delete that did nothing.
+ */
+{
+  const refsProvider = treeProviders.get('weft.refs');
+  const heads = () =>
+    refsProvider.getChildren(refsProvider.getChildren().find((g) => g.id === 'heads'));
+
+  const victim = heads().find((node) => node.label === 'side');
+  const before = confirmations.length;
+
+  if (victim === undefined) {
+    problems.push('no branch to delete from the tree');
+  } else {
+    await commands.get('weft.deleteRef')(victim);
+
+    const by = Date.now() + 15_000;
+    while (Date.now() < by && confirmations.length === before) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    await new Promise((r) => setTimeout(r, 1500));
+
+    const asked = confirmations.at(-1);
+    const inGit = runGit(repoPath, 'branch', '--list', 'side').trim();
+    const listed = heads().some((node) => node.label === 'side');
+
+    console.log('\ndelete branch  :', JSON.stringify(asked?.message ?? '(never asked)'));
+    console.log('  git has it   :', inGit.length > 0 ? inGit : 'no');
+    console.log('  tree lists it:', listed);
+
+    if (asked === undefined) {
+      problems.push('deleting a branch from the tree never asked for confirmation');
+    }
+
+    if (inGit.length > 0) {
+      problems.push('confirming the delete left the branch in git');
+    }
+
+    // The half that is easy to miss: the ref is gone and the sidebar still shows it, which reads
+    // as the delete having done nothing at all.
+    if (listed) {
+      problems.push('the branch was deleted but Branches & Tags still lists it');
+    }
+  }
 }
 
 /*

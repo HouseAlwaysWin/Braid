@@ -38,6 +38,16 @@ export interface FilterSource {
    * rather than each view asking for a reload of its own on the way past.
    */
   clear(): void;
+  /**
+   * Refs have moved - re-read them.
+   *
+   * Not a filter, and here anyway: this is the channel the sidebar and the panel already talk
+   * over, and a second one for a single callback would be worse than the stretch in the name.
+   * Without it Branches & Tags reads the refs once, when the graph opens, and never again - so
+   * deleting a branch removed it from git and left it on screen, which from the outside is
+   * indistinguishable from the delete having done nothing.
+   */
+  refsMoved(): void;
 }
 import { RepoLock } from './git/lock.ts';
 import type { WorkingTree } from './git/repoState.ts';
@@ -323,6 +333,7 @@ export class WeftPanel {
     this.signature = signature;
 
     if (!first) {
+      this.filters.refsMoved();
       this.post({ type: 'reloading', reason: 'repository changed' });
       await this.reload();
     }
@@ -492,6 +503,7 @@ export class WeftPanel {
         return false;
       }
 
+      this.filters.refsMoved();
       await this.reload();
 
       const back = result.before === null ? '' : `  (was ${result.before.slice(0, 8)})`;

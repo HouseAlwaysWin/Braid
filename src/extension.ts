@@ -188,6 +188,7 @@ function start(context: vscode.ExtensionContext): void {
     refs: () => refs.visibleRefs(),
     authorArgs: () => authors.filterArgs(),
     listRefs: () => refs.listForMenu(),
+    refsMoved: () => void refs.reload(),
     setRefsVisible: (refNames: readonly string[], visible: boolean) =>
       refs.setVisible(refNames, visible),
     // `reset` rather than `showAll`: neither view asks for a reload, because the panel is about to.
