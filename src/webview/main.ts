@@ -1961,11 +1961,10 @@ function renderRemote(): void {
     return;
   }
 
+  // Not the branch name: the button beside this says it, and on `claude/changelog-v0.52.0` having
+  // it twice was most of why the row would not fit. (It was also picking up `.branch-name` from the
+  // menu rows, `flex: 1 1 auto` and all, and growing to fill whatever was left.)
   const parts: HTMLElement[] = [];
-
-  if (branch !== null) {
-    parts.push(span('branch-name', branch));
-  }
 
   if (upstream?.gone === true) {
     // The ref's name is in the tooltip; on the line it would only push the branch out of sight.

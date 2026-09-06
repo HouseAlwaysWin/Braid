@@ -74,14 +74,30 @@ body {
  * Wrapping rather than squeezing: with a custom date range open there is more in this bar than a
  * narrow panel can hold, and a search box shrunk to four characters is worse than a second line.
  */
+/*
+ * Two rows: the filters, then what is being looked at. Each row wraps on its own, so a narrow panel
+ * folds the search switches without dragging the repository's name around with them.
+ */
 #header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  flex: 0 0 auto;
+}
+
+#header-controls,
+#header-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--vscode-panel-border, transparent);
-  flex: 0 0 auto;
+}
+
+/* The filters sit right, over the columns they act on, with the row to themselves. */
+#header-controls {
+  justify-content: flex-end;
 }
 
 #title {
@@ -469,7 +485,6 @@ body.vscode-high-contrast.author-tint .row .author {
 }
 
 #search-box {
-  margin-left: auto;
   display: flex;
   gap: 4px;
   align-items: center;
