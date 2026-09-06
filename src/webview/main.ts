@@ -80,6 +80,9 @@ interface ViewState {
   readonly dateSince?: string;
   readonly dateUntil?: string;
   readonly firstParent?: boolean;
+  /** Which groups of the branch menu are rolled up. Worth keeping: a repository with two hundred
+      remote branches is one you collapse once and want to stay collapsed. */
+  readonly branchGroupsClosed?: readonly string[];
 }
 
 /*
@@ -105,6 +108,7 @@ function saveViewState(): void {
     dateSince: dateSince.value,
     dateUntil: dateUntil.value,
     firstParent,
+    branchGroupsClosed: [...branchGroupsClosed],
   } satisfies ViewState);
 }
 
@@ -123,6 +127,7 @@ function restoreViewState(): void {
     Object.assign(searchOptions, state.searchOptions);
   }
 
+  branchGroupsClosed = new Set(state?.branchGroupsClosed ?? []);
   firstParent = state?.firstParent ?? false;
   searchInput.value = state?.query ?? '';
   searchMode.value = state?.mode ?? 'message';
@@ -668,9 +673,22 @@ let menuEl: HTMLElement | null = null;
  */
 let refEntries: readonly RefEntry[] = [];
 let headBranch: string | null = null;
+let branchGroupsClosed = new Set<string>();
 
 function branchMenuOpen(): boolean {
   return !branchList.hidden;
+}
+
+/**
+ * Straight to the host, which owns the one hidden set.
+ *
+ * One message however many refs it is: the reload that follows sends the list back, so nothing here
+ * has to guess what the new state is, and a group of fifty costs one walk rather than fifty.
+ */
+function setRefsDrawn(refNames: readonly string[], visible: boolean): void {
+  if (refNames.length > 0) {
+    vscode.postMessage({ type: 'setRefsVisible', refNames, visible });
+  }
 }
 
 function closeBranchMenu(): void {
@@ -692,9 +710,7 @@ function branchRow(entry: RefEntry): HTMLElement {
   draw.title = entry.visible ? `Stop drawing ${entry.label}` : `Draw ${entry.label}`;
   draw.setAttribute('aria-label', draw.title);
   draw.addEventListener('change', () => {
-    // Straight to the host, which owns the one hidden set. The reload it triggers sends the list
-    // back, so nothing here has to guess what the new state is.
-    vscode.postMessage({ type: 'setRefVisible', refName: entry.refName, visible: draw.checked });
+    setRefsDrawn([entry.refName], draw.checked);
   });
 
   const name = document.createElement('button');
@@ -726,6 +742,63 @@ function branchRow(entry: RefEntry): HTMLElement {
   return row;
 }
 
+/**
+ * A group heading: a tick for all of them, a label that rolls the group up.
+ *
+ * The tick acts on what is *listed*, not on everything of that kind, so it composes with the filter
+ * above it - type `claude`, untick Local, and the eight branches you can see are the eight that
+ * stop being drawn. Acting on the hidden ones too would make the same click mean something
+ * different depending on a box the user can see the contents of.
+ */
+function branchGroupHeader(kind: string, label: string, listed: readonly RefEntry[]): HTMLElement {
+  const row = document.createElement('div');
+  const closed = branchGroupsClosed.has(kind);
+  const drawn = listed.filter((entry) => entry.visible).length;
+
+  row.className = 'branch-group';
+
+  const all = document.createElement('input');
+  all.type = 'checkbox';
+  all.className = 'branch-draw';
+  all.checked = drawn === listed.length;
+  // Neither on nor off: some of what is listed is drawn. Clicking from here draws all of them,
+  // which is the half of the answer that loses nothing.
+  all.indeterminate = drawn > 0 && drawn < listed.length;
+  all.title = all.checked ? `Stop drawing all ${listed.length}` : `Draw all ${listed.length}`;
+  all.setAttribute('aria-label', all.title);
+  all.addEventListener('change', () => {
+    setRefsDrawn(
+      listed.filter((entry) => entry.visible === !all.checked).map((entry) => entry.refName),
+      all.checked,
+    );
+  });
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'branch-group-toggle';
+  toggle.setAttribute('aria-expanded', closed ? 'false' : 'true');
+  toggle.title = closed ? `Show the ${listed.length}` : 'Roll this group up';
+  toggle.append(
+    span('chevron', closed ? '\u25B8' : '\u25BE'),
+    span('branch-group-label', label),
+    span('branch-group-count', String(listed.length)),
+  );
+
+  toggle.addEventListener('click', () => {
+    if (closed) {
+      branchGroupsClosed.delete(kind);
+    } else {
+      branchGroupsClosed.add(kind);
+    }
+
+    saveViewState();
+    renderBranchMenu();
+  });
+
+  row.append(all, toggle);
+  return row;
+}
+
 function renderBranchMenu(): void {
   const needle = branchFilter.value.trim().toLowerCase();
   const matches = refEntries.filter(
@@ -744,7 +817,13 @@ function renderBranchMenu(): void {
       continue;
     }
 
-    branchRows.append(span('branch-group', kind === 'local' ? 'Local' : 'Remote'));
+    branchRows.append(branchGroupHeader(kind, kind === 'local' ? 'Local' : 'Remote', group));
+
+    // Rolled up hides the branches, never the heading: the tick and the count stay reachable, so a
+    // collapsed group is still one click from being switched off entirely.
+    if (branchGroupsClosed.has(kind)) {
+      continue;
+    }
 
     for (const entry of group) {
       branchRows.append(branchRow(entry));

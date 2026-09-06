@@ -1426,7 +1426,7 @@ if (watchTest) {
   } else {
     const walksBefore = posted.filter((m) => m.type === 'done').length;
 
-    await messageHandler({ type: 'setRefVisible', refName: victim.refName, visible: false });
+    await messageHandler({ type: 'setRefsVisible', refNames: [victim.refName], visible: false });
 
     const by = Date.now() + 10_000;
     while (Date.now() < by && posted.filter((m) => m.type === 'done').length === walksBefore) {
@@ -1461,6 +1461,22 @@ if (watchTest) {
 
     if (posted.filter((m) => m.type === 'done').length === walksBefore) {
       problems.push('hiding a branch from the header did not redraw the graph');
+    }
+
+    // --- and a whole group at once, which is what the heading's tick sends ------------------
+    const many = sent.refs.filter((ref) => ref.kind === 'local').map((ref) => ref.refName);
+    const walksBeforeGroup = posted.filter((m) => m.type === 'done').length;
+
+    await messageHandler({ type: 'setRefsVisible', refNames: many, visible: false });
+    await new Promise((r) => setTimeout(r, 1500));
+
+    const walks = posted.filter((m) => m.type === 'done').length - walksBeforeGroup;
+    console.log('group of', many.length, 'hidden:', walks, 'walk' + (walks === 1 ? '' : 's'));
+
+    // One message, one walk. Sending these one at a time would redraw the history per branch,
+    // which is the reason the message carries a list rather than a name.
+    if (walks !== 1) {
+      problems.push(`hiding ${many.length} branches at once cost ${walks} walks of the history`);
     }
 
     await commands.get('weft.showAllRefs')();

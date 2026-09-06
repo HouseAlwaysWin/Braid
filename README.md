@@ -32,7 +32,9 @@ Working:
   path search has a `follow` switch of its own for a path you type
 - The branch button in the header lists every branch: click a name to check it out, or use the
   ticks to choose which branches the graph draws. The ticks are the same ones as in **Branches &
-  Tags**, not a second copy
+  Tags**, not a second copy. Local and Remote roll up, and each heading has a tick for all of
+  them - which acts on what the filter box has left listed, so narrowing and then unticking hides
+  exactly what you can see
 - Right-click to copy: a commit's hash or subject, a branch or tag's name - and its full ref name,
   which is the one git resolves rather than the one you read. Files in **Commit Files** copy their
   path either way round, relative or absolute

@@ -186,7 +186,12 @@ export type WebviewMessage =
   /** Right-click: the host decides what is on the menu, because availability depends on repo state. */
   | { readonly type: 'requestMenu'; readonly target: Target; readonly x: number; readonly y: number }
   | { readonly type: 'runAction'; readonly id: string; readonly target: Target }
-  /** Draw this ref, or stop drawing it - the same switch the sidebar's tick sets. */
-  | { readonly type: 'setRefVisible'; readonly refName: string; readonly visible: boolean }
+  /**
+   * Draw these refs, or stop drawing them - the same switch the sidebar's ticks set.
+   *
+   * A list rather than one name, because a group's tick moves all of them at once and doing that as
+   * fifty messages would be fifty reloads of the graph.
+   */
+  | { readonly type: 'setRefsVisible'; readonly refNames: readonly string[]; readonly visible: boolean }
   /** Hand a conflicted file to VS Code, whose merge editor is better at this than anything here. */
   | { readonly type: 'openConflict'; readonly path: string };

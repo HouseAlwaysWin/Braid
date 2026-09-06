@@ -220,17 +220,27 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
    * This is what the sidebar's own tick calls into, so the header menu and the tree cannot drift:
    * there is one hidden set, one event, and one reload.
    */
-  setVisible(refName: string, visible: boolean): void {
-    const was = this.hidden.has(refName);
+  setVisible(refNames: readonly string[], visible: boolean): void {
+    let moved = false;
 
-    if (was === !visible) {
-      return;
+    for (const refName of refNames) {
+      if (this.hidden.has(refName) === !visible) {
+        continue;
+      }
+
+      moved = true;
+
+      if (visible) {
+        this.hidden.delete(refName);
+      } else {
+        this.hidden.add(refName);
+      }
     }
 
-    if (visible) {
-      this.hidden.delete(refName);
-    } else {
-      this.hidden.add(refName);
+    // Nothing changed, so nothing is announced: a group's tick set on an already-ticked group would
+    // otherwise cost a full walk of the history to arrive at the same graph.
+    if (!moved) {
+      return;
     }
 
     this.changed.fire(undefined);

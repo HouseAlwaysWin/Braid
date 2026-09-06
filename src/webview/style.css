@@ -962,12 +962,48 @@ body.vscode-high-contrast.author-tint .row .author {
   display: none;
 }
 
+/*
+ * A group heading, with the same split as the rows under it: the tick on the left is for all of
+ * them, the label is the thing you click to roll the group up. A repository with two hundred remote
+ * branches is one you collapse once, so the choice is remembered across reloads.
+ */
 .branch-group {
-  padding: 6px 14px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 2px 6px;
+}
+
+.branch-group-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  border: none;
+  background: none;
   color: var(--vscode-descriptionForeground);
+  font: inherit;
   font-size: 0.85em;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.branch-group-toggle:hover {
+  color: var(--weft-fg);
+}
+
+.branch-group-toggle .chevron {
+  width: 1em;
+  font-size: 0.9em;
+}
+
+/* How many are behind the heading - the number that matters most when it is rolled up. */
+.branch-group-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 .branch-row {
