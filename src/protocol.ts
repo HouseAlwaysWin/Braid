@@ -131,6 +131,8 @@ export type HostMessage =
       readonly conflicted: readonly string[];
       readonly controls: readonly MenuItem[];
     }
+  /** Ask the view to search for one file's history. It owns the boxes, so it sets them itself. */
+  | { readonly type: 'showHistory'; readonly path: string }
   | { readonly type: 'error'; readonly message: string };
 
 export type WebviewMessage =

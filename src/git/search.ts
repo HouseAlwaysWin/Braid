@@ -24,7 +24,7 @@ export const SearchMode = {
 
 export type SearchMode = (typeof SearchMode)[keyof typeof SearchMode];
 
-export type SearchToggle = 'caseSensitive' | 'regex' | 'allTerms' | 'invert';
+export type SearchToggle = 'caseSensitive' | 'regex' | 'allTerms' | 'invert' | 'follow';
 
 export interface Search {
   readonly query: string;
@@ -36,6 +36,8 @@ export interface Search {
   readonly allTerms: boolean;
   /** Show the commits that do *not* match. */
   readonly invert: boolean;
+  /** Follow a path through renames, so a file's history does not stop where it was moved. */
+  readonly follow: boolean;
 }
 
 /**
@@ -54,7 +56,7 @@ export const TOGGLES: Readonly<Record<SearchMode, readonly SearchToggle[]>> = {
   [SearchMode.Author]: ['caseSensitive', 'regex', 'allTerms'],
   [SearchMode.Committer]: ['caseSensitive', 'regex', 'allTerms'],
   [SearchMode.Content]: ['caseSensitive', 'regex'],
-  [SearchMode.Path]: ['caseSensitive'],
+  [SearchMode.Path]: ['caseSensitive', 'follow'],
 };
 
 /**
@@ -101,8 +103,17 @@ export function searchArgs(search: Search | null): string[] {
     /*
      * A pathspec takes its switches inside itself rather than as flags: everything after `--` is a
      * path, so there is nowhere else for them to go.
+     *
+     * Except that `--follow` will not have them. `git log --follow -- ':(icase)src/x.ts'` is not a
+     * quieter answer but a fatal error - "pathspec magic not supported by --follow" - which would
+     * take the whole walk with it. Following renames therefore means matching the path exactly,
+     * and the view says so by showing the case switch as locked on rather than letting someone
+     * turn off something that was never going to happen.
      */
-    return ['--', `${on('caseSensitive') ? '' : ':(icase)'}${query}`];
+    const follow = on('follow');
+    const icase = !follow && !on('caseSensitive') ? ':(icase)' : '';
+
+    return [...(follow ? ['--follow'] : []), '--', `${icase}${query}`];
   }
 
   if (search.mode === SearchMode.Content) {

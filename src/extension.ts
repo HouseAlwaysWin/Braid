@@ -294,6 +294,27 @@ function start(context: vscode.ExtensionContext): void {
      * Clicking a file opens its diff. The node arrives from the tree item rather than an index into
      * a list, so there is no way for the two to drift out of step with each other.
      */
+    /*
+     * One file's history. The path comes from the node the tree hands over rather than from
+     * anything typed, which matters more than usual: `--follow` will not take a case-insensitive
+     * pathspec, so the spelling has to be git's own.
+     */
+    vscode.commands.registerCommand('braid.showFileHistory', (node: unknown) => {
+      const target = files.target(node);
+      const panel = BraidPanel.any();
+
+      if (target === null) {
+        return;
+      }
+
+      if (panel === null) {
+        void vscode.window.showInformationMessage('Braid: open the graph first.');
+        return;
+      }
+
+      panel.showFileHistory(target.file.path);
+    }),
+
     vscode.commands.registerCommand('braid.openCommitFile', async (node: unknown) => {
       const target = files.target(node);
 

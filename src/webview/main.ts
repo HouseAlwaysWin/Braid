@@ -1410,6 +1410,10 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
       renderComparison(message);
       break;
 
+    case 'showHistory':
+      showHistory(message.path);
+      break;
+
     case 'menu':
       renderMenu(message.target, message.items, message.x, message.y);
       break;
@@ -1464,6 +1468,7 @@ const searchOptions: Record<SearchToggle, boolean> = {
   regex: false,
   allTerms: false,
   invert: false,
+  follow: false,
 };
 
 function currentMode(): SearchMode {
@@ -1572,19 +1577,33 @@ function refreshHighlight(): void {
 function updateSearchToggles(): void {
   const supported = applicable();
 
+  /*
+   * `--follow` refuses a pathspec with magic in it: `git log --follow -- ':(icase)x'` is a fatal
+   * error rather than a quieter answer. So following renames means matching the path exactly, and
+   * the case switch is shown locked on instead of offering to turn off something that git was
+   * never going to do.
+   */
+  const exact = currentMode() === 'path' && searchOptions.follow;
+
   searchToggles.querySelectorAll<HTMLButtonElement>('.toggle').forEach((button) => {
     const toggle = button.dataset['toggle'] as SearchToggle;
     const shown = supported.includes(toggle);
+    const locked = exact && toggle === 'caseSensitive';
 
     button.hidden = !shown;
-    button.classList.toggle('on', shown && searchOptions[toggle]);
+    button.disabled = locked;
+    button.classList.toggle('on', shown && (locked || searchOptions[toggle]));
+
+    if (locked) {
+      button.title = 'Following renames matches the path exactly: git will not follow a case-insensitive pathspec.';
+    }
   });
 }
 
 searchToggles.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest('.toggle') as HTMLButtonElement | null;
 
-  if (button === null) {
+  if (button === null || button.disabled) {
     return;
   }
 
@@ -1791,6 +1810,33 @@ function currentRange(): DateRange | null {
   from.setDate(from.getDate() - back);
 
   return { since: day(from), until: null };
+}
+
+/**
+ * Ask for one file's history: the path search, with renames followed.
+ *
+ * Driven from the changed-file list rather than typed, so the path is git's own spelling of it -
+ * which matters more than usual here, because following renames is the one path search that cannot
+ * be case-insensitive.
+ */
+function showHistory(path: string): void {
+  searchMode.value = 'path';
+  searchInput.value = path;
+
+  for (const toggle of Object.keys(searchOptions) as SearchToggle[]) {
+    searchOptions[toggle] = toggle === 'follow';
+  }
+
+  dateRange.value = '';
+  dateSince.value = '';
+  dateUntil.value = '';
+  dateCustom.hidden = true;
+
+  updateSearchToggles();
+  refreshHighlight();
+  submitDates();
+  window.clearTimeout(searchTimer);
+  submitSearch();
 }
 
 function submitDates(): void {

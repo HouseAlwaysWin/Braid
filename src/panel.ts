@@ -357,6 +357,18 @@ export class BraidPanel {
     void this.runAction(id, target);
   }
 
+  /**
+   * Show one file's history in the graph.
+   *
+   * The view sets its own search box rather than the panel setting a filter behind it: a graph
+   * narrowed to a path while the box says something else is the disagreement the handshake exists
+   * to prevent.
+   */
+  showFileHistory(path: string): void {
+    this.panel.reveal(this.panel.viewColumn);
+    this.post({ type: 'showHistory', path });
+  }
+
   private async onMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
       case 'ready':

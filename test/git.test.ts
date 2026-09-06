@@ -138,7 +138,15 @@ test('paths with spaces and non-ASCII survive -z', () => {
 
 /** A search with every switch off - what the box sends before anyone touches it. */
 function plain(query: string, mode: SearchMode): Search {
-  return { query, mode, regex: false, caseSensitive: false, allTerms: false, invert: false };
+  return {
+    query,
+    mode,
+    regex: false,
+    caseSensitive: false,
+    allTerms: false,
+    invert: false,
+    follow: false,
+  };
 }
 
 test('a plain query matches as text, not as a pattern', () => {
@@ -235,6 +243,41 @@ test('a mode ignores the switches it cannot honour', () => {
   assert.deepEqual(searchArgs({ ...plain('src/app.ts', SearchMode.Path), regex: true }), [
     '--',
     ':(icase)src/app.ts',
+  ]);
+});
+
+test('following renames and a case-insensitive path cannot both be asked for', () => {
+  /*
+   * Measured, not assumed: `git log --follow -- ':(icase)src/x.ts'` is not a quieter answer, it is
+   * `fatal: pathspec magic not supported by --follow`, which takes the whole walk with it. So the
+   * magic is dropped when following, and the view shows the case switch locked on rather than
+   * offering something git will refuse.
+   */
+  const following = { ...plain('src/app.ts', SearchMode.Path), follow: true };
+
+  assert.deepEqual(searchArgs(following), ['--follow', '--', 'src/app.ts']);
+
+  // Even when the query explicitly asked for case-insensitivity, which is the default.
+  assert.deepEqual(searchArgs({ ...following, caseSensitive: false }), [
+    '--follow',
+    '--',
+    'src/app.ts',
+  ]);
+
+  // And without following, the magic is how case-insensitivity gets there at all.
+  assert.deepEqual(searchArgs(plain('src/app.ts', SearchMode.Path)), [
+    '--',
+    ':(icase)src/app.ts',
+  ]);
+});
+
+test('following renames is a path idea, and no other mode is offered it', () => {
+  assert.deepEqual(TOGGLES[SearchMode.Path], ['caseSensitive', 'follow']);
+
+  assert.ok(!TOGGLES[SearchMode.Message].includes('follow'));
+  assert.deepEqual(searchArgs({ ...plain('fix', SearchMode.Message), follow: true }), [
+    '--regexp-ignore-case',
+    '--grep=fix',
   ]);
 });
 

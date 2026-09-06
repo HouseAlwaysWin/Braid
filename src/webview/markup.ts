@@ -60,6 +60,7 @@ export const BODY_MARKUP = `<header id="header">
         <button class="toggle" type="button" data-toggle="regex" title="Read the query as a regular expression">.*</button>
         <button class="toggle" type="button" data-toggle="allTerms" title="Require every word, not any one of them">all</button>
         <button class="toggle" type="button" data-toggle="invert" title="Show the commits that do not match">not</button>
+        <button class="toggle" type="button" data-toggle="follow" title="Follow the file through renames, so its history does not stop where it was moved. git will not take a case-insensitive path this way, so matching becomes exact.">follow</button>
       </span>
     </span>
   </span>

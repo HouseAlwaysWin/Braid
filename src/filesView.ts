@@ -343,6 +343,10 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
 
     const item = new vscode.TreeItem(basename(file.path));
 
+    // A file node is the only thing the history command can act on, so it is the only thing that
+    // offers it.
+    item.contextValue = 'braidFile';
+
     if (status !== undefined) {
       item.iconPath = new vscode.ThemeIcon(status.icon, new vscode.ThemeColor(status.color));
     }

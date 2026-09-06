@@ -599,7 +599,7 @@ if (done === undefined) {
     return null;
   };
 
-  const plain = { regex: false, caseSensitive: false, allTerms: false, invert: false };
+  const plain = { regex: false, caseSensitive: false, allTerms: false, invert: false, follow: false };
   const impossible = await runSearch({ query: 'zzz-no-such-commit-zzz', mode: 'message', ...plain });
   console.log('search (miss)  :', impossible, 'of', baseline);
 
@@ -1047,7 +1047,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
   authorsHandler({ items: [[(await authorsProvider.getChildren())[0], 1]] });
   messageHandler({
     type: 'search',
-    search: { query: 'commit', mode: 'message', regex: false, caseSensitive: false, allTerms: false, invert: false },
+    search: { query: 'commit', mode: 'message', regex: false, caseSensitive: false, allTerms: false, invert: false, follow: false },
   });
   await settle(posted.filter((m) => m.type === 'done').length - 1);
 
@@ -1289,6 +1289,55 @@ if (watchTest) {
   if ((walks().pop() ?? '').includes('--first-parent')) {
     problems.push('turning first parent off left it on the command line');
   }
+}
+
+/*
+ * One file's history, end to end - and the half of it that only a real repository can answer:
+ * whether `--follow` actually reaches back past a rename. The fixture renames a file and commits
+ * on both sides of it, so a path search without following stops at the rename and one with it does
+ * not. Asserting the flag reached the command line would only prove that it was typed.
+ */
+{
+  const renamed = 'renamed.txt';
+
+  writeFileSync(join(repoPath, 'before-rename.txt'), 'first\n');
+  runGit(repoPath, 'add', '-A');
+  runGit(repoPath, 'commit', '-q', '-m', 'add before-rename.txt');
+  runGit(repoPath, 'mv', 'before-rename.txt', renamed);
+  runGit(repoPath, 'commit', '-q', '-m', 'rename before-rename.txt');
+  writeFileSync(join(repoPath, renamed), 'first\nsecond\n');
+  runGit(repoPath, 'add', '-A');
+  runGit(repoPath, 'commit', '-q', '-m', 'edit renamed.txt');
+
+  const runSearch = async (search) => {
+    const from = posted.filter((m) => m.type === 'done').length;
+    messageHandler({ type: 'search', search });
+
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && posted.filter((m) => m.type === 'done').length === from) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    return posted.filter((m) => m.type === 'done').pop()?.total ?? -1;
+  };
+
+  const base = { query: renamed, mode: 'path', regex: false, caseSensitive: false, allTerms: false, invert: false };
+  const withoutFollow = await runSearch({ ...base, follow: false });
+  const withFollow = await runSearch({ ...base, follow: true, caseSensitive: true });
+
+  console.log('\nfile history   :', renamed, '|', withoutFollow, 'commits touching it,', withFollow, 'following renames');
+
+  if (withoutFollow < 1) {
+    problems.push(`a path search for ${renamed} found ${withoutFollow} commits`);
+  }
+
+  if (withFollow <= withoutFollow) {
+    problems.push(
+      `--follow found ${withFollow} commits where a plain path search found ${withoutFollow}; it did not reach past the rename`,
+    );
+  }
+
+  await runSearch(null);
 }
 
 /*

@@ -107,6 +107,12 @@
         "category": "Braid"
       },
       {
+        "command": "braid.showFileHistory",
+        "title": "Show File History",
+        "category": "Braid",
+        "icon": "$(history)"
+      },
+      {
         "command": "braid.fetch",
         "title": "Fetch",
         "category": "Braid",
@@ -141,6 +147,10 @@
       "commandPalette": [
         {
           "command": "braid.openCommitFile",
+          "when": "false"
+        },
+        {
+          "command": "braid.showFileHistory",
           "when": "false"
         },
         {
@@ -198,6 +208,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "braid.showFileHistory",
+          "when": "view == braid.files && viewItem == braidFile",
+          "group": "navigation@1"
+        },
         {
           "command": "braid.checkoutRef",
           "when": "view == braid.refs && viewItem == braidRef",

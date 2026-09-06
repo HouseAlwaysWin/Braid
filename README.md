@@ -25,6 +25,9 @@ Working:
   fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
   Files** section in Source Control, as a folded tree or a flat list
+- One file's history: right-click it in **Commit Files** for **Show File History**, and the graph
+  narrows to that path with renames followed - so it does not stop where the file was moved. The
+  path search has a `follow` switch of its own for a path you type
 - Compare two commits: right-click one for **Select for Compare**, then another for **Compare
   with …** - the two steps VS Code's own file compare uses, and ctrl-click does the same pair
   without the menu. The Commit Files section fills with what they differ by, and the pane says how
@@ -75,7 +78,7 @@ Working:
 - Draggable split between the graph and the details pane, remembered across panel reloads
 
 Anything that could destroy uncommitted work names the files it would destroy before asking, and
-nothing passes `--force` by default. Still to come: following one file through history.
+nothing passes `--force` by default.
 
 ## Where to find it
 
@@ -143,6 +146,12 @@ told otherwise, and what it means by a ticked parent is "every child is ticked" 
 enforce at the next render. Braid means something else by a ticked group: "some of these are
 showing". The two disagreeing looked like unticking a branch putting its own tick straight back on,
 and the fix is one flag saying who owns them.
+
+**`--follow` will not take a pathspec with magic in it.** `git log --follow -- ':(icase)src/x.ts'`
+is not a quieter answer, it is `fatal: pathspec magic not supported by --follow`, and it takes the
+whole walk with it - which matters because a path search is case-insensitive by default, so the
+obvious combination is the broken one. Following renames therefore matches the path exactly, and
+the case switch is shown locked on rather than offering something git will refuse.
 
 **git's date flags need spelling out.** A bare `--since=2026-07-24` is not midnight: approxidate
 fills the unspecified fields from the current clock, so run at 20:08 it means that evening - and
