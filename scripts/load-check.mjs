@@ -2,7 +2,7 @@
  * Loads the built extension with a stubbed `vscode` module and drives it end to end.
  *
  * This is the check that "it fails to load" and "the command is dead" cannot survive. It exercises
- * the real CommonJS bundle VS Code will require, calls `activate`, invokes `braid.openGraph`, and
+ * the real CommonJS bundle VS Code will require, calls `activate`, invokes `weft.openGraph`, and
  * replays the webview handshake - so everything except VS Code's own chrome is covered before
  * anyone presses F5.
  *
@@ -21,9 +21,9 @@ const given = process.argv.slice(2).find((a) => !a.startsWith('--'));
 
 /** A throwaway repository, so the watcher test can commit into it without touching anything real. */
 function makeTempRepo() {
-  const dir = mkdtempSync(join(tmpdir(), 'braid-watch-')).split('\\').join('/');
+  const dir = mkdtempSync(join(tmpdir(), 'weft-watch-')).split('\\').join('/');
   runGit(dir, 'init', '-q', '-b', 'main');
-  runGit(dir, 'config', 'user.name', 'Braid Test');
+  runGit(dir, 'config', 'user.name', 'Weft Test');
   runGit(dir, 'config', 'user.email', 'test@example.invalid');
   runGit(dir, 'config', 'commit.gpgsign', 'false');
   runGit(dir, 'config', 'core.autocrlf', 'false');
@@ -36,7 +36,7 @@ function makeTempRepo() {
   runGit(dir, 'config', 'user.name', 'Someone Else');
   runGit(dir, 'config', 'user.email', 'else@example.invalid');
   commitInto(dir, 4);
-  runGit(dir, 'config', 'user.name', 'Braid Test');
+  runGit(dir, 'config', 'user.name', 'Weft Test');
   runGit(dir, 'config', 'user.email', 'test@example.invalid');
 
   // A side branch with a commit of its own, so the ref filter has something to remove.
@@ -105,7 +105,7 @@ function propagateCheckboxes(id) {
 
 /** Drive the ref filter picker the way a user would: type, then accept. */
 async function typeIntoRefFilter(text) {
-  await commands.get('braid.filterRefs')();
+  await commands.get('weft.filterRefs')();
   quickPick.picker.value = text;
   quickPick.handlers.change?.(text);
   quickPick.handlers.accept?.();
@@ -159,7 +159,7 @@ const vscodeStub = {
     /*
      * A window with a file open, which is the ordinary one. Its path was being handed to git as a
      * working directory - a file is not a directory, Node calls that `spawn git ENOENT`, and the
-     * rejection took `braid.hasRepository` with it. Every section in Source Control disappeared,
+     * rejection took `weft.hasRepository` with it. Every section in Source Control disappeared,
      * while the graph itself kept working, because opening that has no editor focused.
      */
     activeTextEditor: { document: { uri: uri(repoPath.replace(/\\/g, '/') + '/f1.txt') } },
@@ -327,7 +327,7 @@ await new Promise((r) => setTimeout(r, 800));
  * Activation is all or nothing: everything below is meaningless if `activate` threw on the way
  * through, and it used to fail without saying so.
  */
-if (!outputLines.some((line) => line.includes('Braid activated'))) {
+if (!outputLines.some((line) => line.includes('Weft activated'))) {
   problems.push('activate() did not run to completion');
 }
 
@@ -336,11 +336,11 @@ if (!outputLines.some((line) => line.includes('Braid activated'))) {
  *
  * It reproduces a window whose manifest is older than its code - `createTreeView` throwing for a
  * view that window has never heard of - which is how adding a view and not restarting the
- * Extension Development Host used to look: no commands, no `braid.hasRepository`, all three
+ * Extension Development Host used to look: no commands, no `weft.hasRepository`, all three
  * Source Control sections gone, and not a word about any of it.
  */
 if (breakView !== null) {
-  const logged = outputLines.some((line) => line.includes('Braid failed to activate'));
+  const logged = outputLines.some((line) => line.includes('Weft failed to activate'));
   const shown = problems.some((p) => p.includes('unexpected error message'));
 
   console.log('broken view    :', breakView, '|', logged ? 'logged' : 'NOT LOGGED', '|', shown ? 'shown to the user' : 'NOT SHOWN');
@@ -360,19 +360,19 @@ console.log('status bar     :', statusBarItem === null ? 'NOT CREATED' : JSON.st
 if (statusBarItem === null) {
   problems.push('no status bar item was created');
 } else {
-  if (statusBarItem.command !== 'braid.openGraph') problems.push('status bar item runs the wrong command: ' + statusBarItem.command);
+  if (statusBarItem.command !== 'weft.openGraph') problems.push('status bar item runs the wrong command: ' + statusBarItem.command);
   if (!statusBarItem.visible) problems.push('status bar item stayed hidden in a real repository');
 }
 
 /*
- * The two Source Control sections are contributed with `when: braid.hasRepository`, so this key is
+ * The two Source Control sections are contributed with `when: weft.hasRepository`, so this key is
  * the whole of their visibility. A key that never arrives is an extension with no sidebar at all,
  * and nothing else in this run would notice.
  */
 console.log('context keys   :', JSON.stringify(Object.fromEntries(contextKeys)));
 
-if (contextKeys.get('braid.hasRepository') !== true) {
-  problems.push('braid.hasRepository was not set in a real repository (is a file being used as a working directory?)');
+if (contextKeys.get('weft.hasRepository') !== true) {
+  problems.push('weft.hasRepository was not set in a real repository (is a file being used as a working directory?)');
 }
 
 /*
@@ -389,7 +389,7 @@ console.log('subscriptions  :', context.subscriptions.length);
 
 /*
  * Every contributed command must actually be registered. Read from package.json rather than a list
- * kept here, because the failure this catches is exactly a list going stale: `braid.refresh` once
+ * kept here, because the failure this catches is exactly a list going stale: `weft.refresh` once
  * shipped in the manifest with nothing behind it, and a hand-maintained expectation would have to
  * be updated by the same person who forgot the registration.
  */
@@ -406,7 +406,7 @@ for (const expected of contributed) {
 
 /*
  * The same staleness the other way round. A tree view created in code but contributed to no
- * container has nowhere to appear, and since Braid gave up its own Activity Bar container there is
+ * container has nowhere to appear, and since Weft gave up its own Activity Bar container there is
  * no second home to fall back to - it would simply never be seen, silently.
  */
 const scmViews = (manifest.contributes.views?.scm ?? []).map((view) => view.id);
@@ -419,10 +419,10 @@ for (const id of treeViews.keys()) {
   }
 }
 
-await commands.get('braid.openGraph')();
+await commands.get('weft.openGraph')();
 
 if (panelCreated === null) {
-  problems.push('braid.openGraph did not create a webview panel');
+  problems.push('weft.openGraph did not create a webview panel');
 } else {
   console.log('panel          :', panelCreated.viewType, '/', panelCreated.title);
 }
@@ -478,12 +478,12 @@ if (sampleSha === undefined) {
  * The changed files reach the user through the Commit Files section now, so that is where they get
  * checked: its provider is the only thing standing between a `git show` and the sidebar.
  */
-const filesProvider = treeProviders.get('braid.files');
-const filesView = treeViews.get('braid.files');
+const filesProvider = treeProviders.get('weft.files');
+const filesView = treeViews.get('weft.files');
 const fileNodes = [];
 
 if (filesProvider === undefined) {
-  problems.push('no tree provider was registered for braid.files');
+  problems.push('no tree provider was registered for weft.files');
 } else {
   const walk = (nodes) => {
     for (const node of nodes) {
@@ -513,9 +513,9 @@ if (filesProvider === undefined) {
   }
 
   // Flat reaches the same files by another route; a mode that loses rows is a bug either way.
-  await commands.get('braid.filesAsList')();
+  await commands.get('weft.filesAsList')();
   const flat = filesProvider.getChildren();
-  await commands.get('braid.filesAsTree')();
+  await commands.get('weft.filesAsTree')();
 
   if (flat.length !== fileNodes.length) {
     problems.push(`flat view shows ${flat.length} files, tree view ${fileNodes.length}`);
@@ -526,19 +526,19 @@ if (filesProvider === undefined) {
 const firstFile = fileNodes[0];
 
 if (firstFile !== undefined) {
-  await commands.get('braid.openCommitFile')(firstFile);
+  await commands.get('weft.openCommitFile')(firstFile);
 
   const opened = diffsOpened[0];
 
   if (opened === undefined) {
     problems.push('opening a file produced no diff');
   } else {
-    const provider = contentProviders.get('braid-git');
+    const provider = contentProviders.get('weft-git');
     console.log('diff           :', opened.title);
     console.log('  right uri    :', opened.right.path);
 
     if (provider === undefined) {
-      problems.push('no content provider was registered for braid-git');
+      problems.push('no content provider was registered for weft-git');
     } else {
       const text = await provider.provideTextDocumentContent(opened.right);
       const left = await provider.provideTextDocumentContent(opened.left);
@@ -691,7 +691,7 @@ if (done === undefined) {
   console.log('\nmenu (side)    :', JSON.stringify(onSide?.items));
   console.log('menu (current) :', JSON.stringify(onCurrent?.items?.map((i) => i.disabledReason)));
 
-  if (onSide?.items?.[0]?.id !== 'braid.checkoutBranch') {
+  if (onSide?.items?.[0]?.id !== 'weft.checkoutBranch') {
     problems.push('right-clicking a branch did not offer checkout');
   }
 
@@ -708,9 +708,9 @@ if (done === undefined) {
  * Ref filtering has to be a real filter, not a display trick: unticking refs must narrow what
  * `git log` walks, so the commit count actually drops.
  */
-const treeProvider = treeProviders.get('braid.refs');
-const checkboxHandler = checkboxHandlers.get('braid.refs');
-const treeView = treeViews.get('braid.refs');
+const treeProvider = treeProviders.get('weft.refs');
+const checkboxHandler = checkboxHandlers.get('weft.refs');
+const treeView = treeViews.get('weft.refs');
 
 if (treeProvider !== undefined && checkboxHandler !== undefined) {
   const groups = treeProvider.getChildren();
@@ -774,7 +774,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 
       // And putting them back must restore the full history.
       const beforeRestore = posted.filter((m) => m.type === 'done').length;
-      await commands.get('braid.showAllRefs')();
+      await commands.get('weft.showAllRefs')();
 
       const restoreDeadline = Date.now() + 20_000;
       let restored = null;
@@ -834,7 +834,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
   }
 
   // The picker offers the ref names, which is the point of it being a picker.
-  await commands.get('braid.filterRefs')();
+  await commands.get('weft.filterRefs')();
   const offered = quickPick.picker.items.map((item) => item.label);
   console.log('  completions  :', offered.join(', '));
 
@@ -851,7 +851,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
   }
 
   // Escape has to undo the live filtering, or cancelling would still change something.
-  await commands.get('braid.filterRefs')();
+  await commands.get('weft.filterRefs')();
   quickPick.handlers.change?.('nothing-matches-this');
   quickPick.handlers.hide?.();
 
@@ -870,7 +870,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
   await typeIntoRefFilter('side');
 
   const reloadsBefore = posted.filter((m) => m.type === 'done').length;
-  await commands.get('braid.showAllRefs')();
+  await commands.get('weft.showAllRefs')();
 
   const restored = treeProvider.getChildren().flatMap((g) => treeProvider.getChildren(g)).length;
   console.log(`  show all     : back to ${restored} refs`);
@@ -888,11 +888,11 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 }
 
 {
-  const treeProvider = treeProviders.get('braid.refs');
-  const checkboxHandler = checkboxHandlers.get('braid.refs');
+  const treeProvider = treeProviders.get('weft.refs');
+  const checkboxHandler = checkboxHandlers.get('weft.refs');
 
   /*
-   * A tick has to survive the render that follows it. Braid marks a group as ticked whenever any of
+   * A tick has to survive the render that follows it. Weft marks a group as ticked whenever any of
    * its refs are showing, which is not what VS Code means by a ticked parent - so with the
    * checkboxes left in VS Code's hands, unticking one branch was undone before it was seen.
    */
@@ -902,7 +902,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
     const victim = locals.find((ref) => ref.label !== 'main') ?? locals[0];
 
     checkboxHandler({ items: [[victim, 0]] });
-    propagateCheckboxes('braid.refs');
+    propagateCheckboxes('weft.refs');
 
     const stillOff = treeProvider.getTreeItem(victim).checkboxState === 0;
 
@@ -912,13 +912,13 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
       problems.push(`unticking ${victim.label} did not stick: the group's own tick put it back`);
     }
 
-    await commands.get('braid.showAllRefs')();
+    await commands.get('weft.showAllRefs')();
     await new Promise((r) => setTimeout(r, 500));
   }
 }
 
 {
-  const treeView = treeViews.get('braid.refs');
+  const treeView = treeViews.get('weft.refs');
 
   /*
    * The message has to carry the half that is not on screen. Filtering the list leaves every ref
@@ -945,7 +945,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 
   // And the one click that makes the graph agree with the list.
   const applyFrom = posted.filter((m) => m.type === 'done').length;
-  await commands.get('braid.showOnlyListedRefs')();
+  await commands.get('weft.showOnlyListedRefs')();
 
   const applyBy = Date.now() + 20_000;
   while (Date.now() < applyBy && posted.filter((m) => m.type === 'done').length === applyFrom) {
@@ -965,14 +965,14 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
     problems.push(`applying the list filter left ${applied} of ${baseline} commits`);
   }
 
-  await commands.get('braid.showAllRefs')();
+  await commands.get('weft.showAllRefs')();
   await new Promise((r) => setTimeout(r, 500));
 
 }
 
 {
-  const authorsProvider = treeProviders.get('braid.authors');
-  const authorsHandler = checkboxHandlers.get('braid.authors');
+  const authorsProvider = treeProviders.get('weft.authors');
+  const authorsHandler = checkboxHandlers.get('weft.authors');
 
   if (authorsProvider === undefined || authorsHandler === undefined) {
     problems.push('no authors view was registered');
@@ -1007,7 +1007,7 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 
       // Put it back. Leaving a filter on would silently change what every later section is
       // measuring - which is exactly what it did the first time this ran.
-      await commands.get('braid.showAllAuthors')();
+      await commands.get('weft.showAllAuthors')();
 
       const restoreDeadline = Date.now() + 20_000;
       while (
@@ -1027,10 +1027,10 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
  * one click puts every one back and the history is whole again.
  */
 {
-  const refsProvider = treeProviders.get('braid.refs');
-  const refsHandler = checkboxHandlers.get('braid.refs');
-  const authorsProvider = treeProviders.get('braid.authors');
-  const authorsHandler = checkboxHandlers.get('braid.authors');
+  const refsProvider = treeProviders.get('weft.refs');
+  const refsHandler = checkboxHandlers.get('weft.refs');
+  const authorsProvider = treeProviders.get('weft.authors');
+  const authorsHandler = checkboxHandlers.get('weft.authors');
   const baseline = posted.filter((m) => m.type === 'done').pop()?.total ?? 0;
 
   const settle = async (from) => {
@@ -1154,12 +1154,12 @@ if (watchTest) {
  * everything here happens *because* the graph lost focus, and a stub panel that is focused forever
  * is the one state where the bug this covers does not appear.
  *
- * It reloaded `BraidPanel.active()` - the *focused* graph - so ticking a box in Source Control,
+ * It reloaded `WeftPanel.active()` - the *focused* graph - so ticking a box in Source Control,
  * which is itself the act of unfocusing the graph, reloaded nothing at all.
  */
 {
-  const refsProvider = treeProviders.get('braid.refs');
-  const refsHandler = checkboxHandlers.get('braid.refs');
+  const refsProvider = treeProviders.get('weft.refs');
+  const refsHandler = checkboxHandlers.get('weft.refs');
   const baseline = posted.filter((m) => m.type === 'done').pop()?.total ?? 0;
 
   // The graph is no longer the focused editor, exactly as it is not when a sidebar is being used.
@@ -1194,7 +1194,7 @@ if (watchTest) {
     problems.push(`unticking ${side.label} left ${unticked} of ${baseline} commits`);
   }
 
-  await commands.get('braid.showAllRefs')();
+  await commands.get('weft.showAllRefs')();
   await settle(posted.filter((m) => m.type === 'done').length - 1);
 
   /*
@@ -1210,7 +1210,7 @@ if (watchTest) {
   const trunk = locals.find((ref) => ref.label === 'main') ?? side;
   const onlyFrom = posted.filter((m) => m.type === 'done').length;
 
-  await commands.get('braid.showOnlyRef')(trunk);
+  await commands.get('weft.showOnlyRef')(trunk);
   const only = await settle(onlyFrom);
 
   const shown = refsProvider
@@ -1239,7 +1239,7 @@ if (watchTest) {
     problems.push(`showing only ${trunk.label} left ${only} of ${baseline} commits`);
   }
 
-  await commands.get('braid.showAllRefs')();
+  await commands.get('weft.showAllRefs')();
   await settle(posted.filter((m) => m.type === 'done').length - 1);
 
   // Put the focus back, so nothing after this is measuring a different window than it thinks.
@@ -1251,7 +1251,7 @@ if (watchTest) {
 
 /*
  * `--first-parent` is two halves - an argument to git and an option to the layout - and only one of
- * them is visible from here. The argument is: every command Braid runs is logged, so the walk can
+ * them is visible from here. The argument is: every command Weft runs is logged, so the walk can
  * be read back rather than inferred from a commit count that a linear fixture would not change.
  */
 {
@@ -1384,7 +1384,7 @@ if (watchTest) {
         );
       }
 
-      const provider = treeProviders.get('braid.files');
+      const provider = treeProviders.get('weft.files');
       const nodes = [];
       const walk = (list) => {
         for (const node of list) {
@@ -1398,7 +1398,7 @@ if (watchTest) {
 
       walk(provider.getChildren());
 
-      console.log('  section says :', treeViews.get('braid.files')?.description ?? 'NO DESCRIPTION');
+      console.log('  section says :', treeViews.get('weft.files')?.description ?? 'NO DESCRIPTION');
 
       if (nodes.length !== comparison.files) {
         problems.push(`the section listed ${nodes.length} files, the comparison found ${comparison.files}`);
@@ -1406,7 +1406,7 @@ if (watchTest) {
 
       // A file opened from a range diffs blob against blob, not against the working tree.
       diffsOpened.length = 0;
-      await commands.get('braid.openCommitFile')(nodes[0]);
+      await commands.get('weft.openCommitFile')(nodes[0]);
 
       const opened = diffsOpened[0];
 
@@ -1419,7 +1419,7 @@ if (watchTest) {
           problems.push(`a comparison diff is titled ${opened.title}`);
         }
 
-        const contents = contentProviders.get('braid-git');
+        const contents = contentProviders.get('weft-git');
         const right = await contents.provideTextDocumentContent(opened.right);
 
         if (right.length === 0 && nodes[0].file.newBlob !== null) {
@@ -1477,7 +1477,7 @@ if (watchTest) {
 
   await messageHandler({ type: 'selectUncommitted' });
 
-  const provider = treeProviders.get('braid.files');
+  const provider = treeProviders.get('weft.files');
   const nodes = [];
   const walk = (list) => {
     for (const node of list) {
@@ -1492,7 +1492,7 @@ if (watchTest) {
   walk(provider.getChildren());
 
   console.log('  files listed :', nodes.map((n) => `${n.file.status} ${n.file.path}`).join(', ') || '(none)');
-  console.log('  section says :', treeViews.get('braid.files')?.description ?? 'NO DESCRIPTION');
+  console.log('  section says :', treeViews.get('weft.files')?.description ?? 'NO DESCRIPTION');
 
   if (state !== undefined && nodes.length !== state.total) {
     problems.push(`the section listed ${nodes.length} working-tree files, git status found ${state.total}`);
@@ -1508,7 +1508,7 @@ if (watchTest) {
     problems.push('the edited file was not listed as modified');
   } else {
     diffsOpened.length = 0;
-    await commands.get('braid.openCommitFile')(edited);
+    await commands.get('weft.openCommitFile')(edited);
 
     const opened = diffsOpened[0];
 
@@ -1521,13 +1521,13 @@ if (watchTest) {
         problems.push(`an uncommitted diff was titled ${opened.title}`);
       }
 
-      // The right side is the file itself, not a revision Braid serves.
+      // The right side is the file itself, not a revision Weft serves.
       if (!String(opened.right.fsPath ?? '').endsWith('f1.txt')) {
         problems.push('the right side of an uncommitted diff is not the file on disk');
       }
 
       // The left side has no blob OID, so it can only come back through `HEAD:<path>`.
-      const contents = contentProviders.get('braid-git');
+      const contents = contentProviders.get('weft-git');
       const left = await contents.provideTextDocumentContent(opened.left);
 
       console.log('  HEAD side    :', left.length, 'chars');

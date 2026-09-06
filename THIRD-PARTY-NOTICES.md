@@ -1,13 +1,13 @@
 # Third-party notices
 
-Braid includes code derived from the projects below. Their license terms are
+Weft includes code derived from the projects below. Their license terms are
 reproduced here as those licenses require.
 
 ---
 
 ## SourceGit
 
-Braid's commit-graph lane layout (`src/graph/layout.ts`, `src/graph/model.ts`) is
+Weft's commit-graph lane layout (`src/graph/layout.ts`, `src/graph/model.ts`) is
 derived from SourceGit's `Models/CommitGraph.cs`, by way of a prior C#
 implementation in GitFlick.
 

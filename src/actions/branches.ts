@@ -47,7 +47,7 @@ function validateRefName(name: string, taken: readonly string[]): string | null 
 }
 
 const checkoutBranch: Action = {
-  id: 'braid.checkoutBranch',
+  id: 'weft.checkoutBranch',
   group: 'branch',
   tier: Tier.Safe,
 
@@ -85,7 +85,7 @@ const checkoutBranch: Action = {
 };
 
 const checkoutRemoteBranch: Action = {
-  id: 'braid.checkoutRemoteBranch',
+  id: 'weft.checkoutRemoteBranch',
   group: 'branch',
   tier: Tier.Safe,
 
@@ -135,7 +135,7 @@ function localNameOf(remoteLabel: string): string {
 }
 
 const checkoutCommit: Action = {
-  id: 'braid.checkoutCommit',
+  id: 'weft.checkoutCommit',
   group: 'branch',
   tier: Tier.Safe,
 
@@ -160,7 +160,7 @@ const checkoutCommit: Action = {
 };
 
 const createBranch: Action = {
-  id: 'braid.createBranch',
+  id: 'weft.createBranch',
   group: 'create',
   tier: Tier.Safe,
 
@@ -194,7 +194,7 @@ const createBranch: Action = {
 };
 
 const renameBranch: Action = {
-  id: 'braid.renameBranch',
+  id: 'weft.renameBranch',
   group: 'branch',
   tier: Tier.Safe,
 
@@ -257,7 +257,7 @@ async function orphanCount(git: Git, repo: RepoInfo, branch: string): Promise<nu
 }
 
 const deleteBranch: Action = {
-  id: 'braid.deleteBranch',
+  id: 'weft.deleteBranch',
   group: 'danger',
   tier: Tier.Confirm,
 
@@ -318,7 +318,7 @@ const deleteBranch: Action = {
 };
 
 const createTag: Action = {
-  id: 'braid.createTag',
+  id: 'weft.createTag',
   group: 'create',
   tier: Tier.Safe,
 
@@ -363,7 +363,7 @@ const createTag: Action = {
 };
 
 const deleteTag: Action = {
-  id: 'braid.deleteTag',
+  id: 'weft.deleteTag',
   group: 'danger',
   tier: Tier.Confirm,
 

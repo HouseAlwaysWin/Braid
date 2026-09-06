@@ -8,8 +8,8 @@
  *
  * Two boundaries are held firmly:
  *
- * **Credentials are not Braid's business.** Whatever credential helper is already configured -
- * Git Credential Manager, an ssh agent, a `.netrc` - is what authenticates. Braid never implements
+ * **Credentials are not Weft's business.** Whatever credential helper is already configured -
+ * Git Credential Manager, an ssh agent, a `.netrc` - is what authenticates. Weft never implements
  * an askpass, never stores a token, never touches OAuth. An authentication failure is a clear
  * message pointing at where the user already signs in, not the beginning of a login flow.
  *
@@ -77,7 +77,7 @@ async function shaOf(git: Git, repo: RepoInfo, revision: string): Promise<string
 }
 
 const fetch: Action = {
-  id: 'braid.fetch',
+  id: 'weft.fetch',
   group: 'remote',
   // Fetch writes only remote-tracking refs. It cannot touch the working tree, a local branch, or
   // HEAD, which is also why it is the one action not blocked by an operation in progress: knowing
@@ -101,7 +101,7 @@ const fetch: Action = {
     );
 
     // --prune deletes remote-tracking refs for branches that are gone from the remote. Worth
-    // saying, because a branch vanishing from the graph otherwise looks like Braid lost it.
+    // saying, because a branch vanishing from the graph otherwise looks like Weft lost it.
     if (tracked === null) {
       return { message: 'Fetched', ran: true };
     }
@@ -137,7 +137,7 @@ const fetch: Action = {
  * ask anything at all.
  */
 const pull: Action = {
-  id: 'braid.pull',
+  id: 'weft.pull',
   group: 'remote',
   tier: Tier.Safe,
 
@@ -248,7 +248,7 @@ async function chooseRemote(context: ActionContext, branch: string): Promise<str
 }
 
 const push: Action = {
-  id: 'braid.push',
+  id: 'weft.push',
   group: 'remote',
   // Pushing adds to the remote or git refuses. The refusal is the safety, and it is why this is
   // tier 1 while the forced version is tier 3 - they are not one action with a flag.
@@ -319,11 +319,11 @@ const push: Action = {
 };
 
 const pushForce: Action = {
-  id: 'braid.pushForce',
+  id: 'weft.pushForce',
   // 'remote' rather than 'danger': the group decides which menus this can appear in, and the tier
   // is what makes it render as destructive. Grouping it with Abort put it in the operation banner.
   group: 'remote',
-  // Tier 3, and the only action here that earns it: this is the one way Braid can destroy work
+  // Tier 3, and the only action here that earns it: this is the one way Weft can destroy work
   // that exists nowhere on this machine. The reflog does not help - the commits being dropped are
   // on someone else's clone.
   tier: Tier.Destructive,
@@ -378,7 +378,7 @@ const pushForce: Action = {
     // last week's remote as if it were this one. Say that instead of inventing a number.
     if (!checked) {
       return (
-        `Braid could not reach ${remote} just now, so it cannot say what is there.\n\n` +
+        `Weft could not reach ${remote} just now, so it cannot say what is there.\n\n` +
         'The lease will be checked against whatever was last fetched, and git will refuse the push ' +
         'if that turns out to be out of date - but nothing here can tell you what you would be ' +
         'replacing.'

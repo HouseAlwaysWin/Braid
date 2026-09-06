@@ -1,5 +1,5 @@
 /**
- * Parses the fixed `git log --format=...` record Braid asks for.
+ * Parses the fixed `git log --format=...` record Weft asks for.
  *
  * Ported from GitFlick's `Services/CommitLogParser.cs`, with two changes:
  *

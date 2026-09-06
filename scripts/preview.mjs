@@ -78,9 +78,9 @@ if (process.argv.includes('--conflict')) {
     description: 'a merge',
     conflicted: ['GitFlick/ViewModels/HistoryViewModel.cs', 'CHANGELOG.md'],
     controls: [
-      { id: 'braid.continueOperation', label: 'Continue', group: 'operation', destructive: false, disabledReason: 'Resolve the conflicts first' },
-      { id: 'braid.skipOperation', label: 'Skip', group: 'operation', destructive: false, disabledReason: 'A merge cannot skip a commit' },
-      { id: 'braid.abortOperation', label: 'Abort', group: 'danger', destructive: false, disabledReason: null },
+      { id: 'weft.continueOperation', label: 'Continue', group: 'operation', destructive: false, disabledReason: 'Resolve the conflicts first' },
+      { id: 'weft.skipOperation', label: 'Skip', group: 'operation', destructive: false, disabledReason: 'A merge cannot skip a commit' },
+      { id: 'weft.abortOperation', label: 'Abort', group: 'danger', destructive: false, disabledReason: null },
     ],
   });
 }
@@ -175,7 +175,7 @@ const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Braid preview - ${repo.root}</title>
+<title>Weft preview - ${repo.root}</title>
 <style>:root {\n${vars}\n}</style>
 <link href="style.css" rel="stylesheet">
 </head>
@@ -196,16 +196,16 @@ ${BODY_MARKUP}
           y: m.y,
           items: m.target.kind === 'ref'
             ? [
-                { id: 'braid.checkoutBranch', label: 'Checkout ' + m.target.label, group: 'branch', destructive: false, disabledReason: null },
-                { id: 'braid.renameBranch', label: 'Rename ' + m.target.label + '…', group: 'branch', destructive: false, disabledReason: null },
-                { id: 'braid.createBranch', label: 'Create branch from ' + m.target.label + '…', group: 'create', destructive: false, disabledReason: null },
-                { id: 'braid.createTag', label: 'Create tag at ' + m.target.label + '…', group: 'create', destructive: false, disabledReason: null },
-                { id: 'braid.deleteBranch', label: 'Delete ' + m.target.label, group: 'danger', destructive: false, disabledReason: null },
+                { id: 'weft.checkoutBranch', label: 'Checkout ' + m.target.label, group: 'branch', destructive: false, disabledReason: null },
+                { id: 'weft.renameBranch', label: 'Rename ' + m.target.label + '…', group: 'branch', destructive: false, disabledReason: null },
+                { id: 'weft.createBranch', label: 'Create branch from ' + m.target.label + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'weft.createTag', label: 'Create tag at ' + m.target.label + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'weft.deleteBranch', label: 'Delete ' + m.target.label, group: 'danger', destructive: false, disabledReason: null },
               ]
             : [
-                { id: 'braid.checkoutCommit', label: 'Checkout ' + m.target.sha.slice(0,8) + ' (detached)', group: 'branch', destructive: false, disabledReason: null },
-                { id: 'braid.createBranch', label: 'Create branch from ' + m.target.sha.slice(0,8) + '…', group: 'create', destructive: false, disabledReason: null },
-                { id: 'braid.createTag', label: 'Create tag at ' + m.target.sha.slice(0,8) + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'weft.checkoutCommit', label: 'Checkout ' + m.target.sha.slice(0,8) + ' (detached)', group: 'branch', destructive: false, disabledReason: null },
+                { id: 'weft.createBranch', label: 'Create branch from ' + m.target.sha.slice(0,8) + '…', group: 'create', destructive: false, disabledReason: null },
+                { id: 'weft.createTag', label: 'Create tag at ' + m.target.sha.slice(0,8) + '…', group: 'create', destructive: false, disabledReason: null },
                 { id: 'demo.reset', label: 'Reset main to here (hard)', group: 'danger', destructive: true, disabledReason: 'Not built yet' },
               ],
         }, '*');
@@ -213,8 +213,8 @@ ${BODY_MARKUP}
     },
     // A real store rather than a stub: the view's layout and filters are supposed to survive the
     // tab being hidden, and a getState that always answers undefined would hide it if they did not.
-    getState: () => { try { return JSON.parse(sessionStorage.getItem('braid.state') ?? 'null') ?? undefined; } catch { return undefined; } },
-    setState: (v) => { try { sessionStorage.setItem('braid.state', JSON.stringify(v)); } catch {} },
+    getState: () => { try { return JSON.parse(sessionStorage.getItem('weft.state') ?? 'null') ?? undefined; } catch { return undefined; } },
+    setState: (v) => { try { sessionStorage.setItem('weft.state', JSON.stringify(v)); } catch {} },
   });
   const MESSAGES = ${JSON.stringify(messages)};
   const INIT = ${JSON.stringify({

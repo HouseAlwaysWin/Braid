@@ -1,8 +1,8 @@
-# Braid
+# Git Weft
 
 A Git commit graph for VS Code, fast on large repositories.
 
-Braid is an independent extension, written from scratch. It is not a fork of, and shares no code
+Weft is an independent extension, written from scratch. It is not a fork of, and shares no code
 with, any other graph extension.
 
 ## Status
@@ -21,7 +21,7 @@ Working:
   the tree as you save, without re-walking the history to do it
 - Where the branch stands against the one it tracks, and how old that answer is:
   `main ↑2 ↓1 fetched 3h ago` beside the title. The age is not decoration - see the design note
-- Fetch on a timer if you want one (`braid.autoFetchMinutes`, off by default). Braid also picks up
+- Fetch on a timer if you want one (`weft.autoFetchMinutes`, off by default). Weft also picks up
   fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
   Files** section in Source Control, as a folded tree or a flat list
@@ -72,7 +72,7 @@ Working:
   is what you meant
 - A text filter for the branch list itself, for repositories with more refs than fit on screen
 - Each author gets their own colour, derived from the name so it never shifts as pages stream in
-- Fetch, pull and push, using whatever credential helper is already set up - Braid never asks for
+- Fetch, pull and push, using whatever credential helper is already set up - Weft never asks for
   a password and never stores one. Pull asks whether to merge or rebase only when the histories
   have actually diverged, and force push is `--force-with-lease` after a fetch, never `--force`
 - Draggable split between the graph and the details pane, remembered across panel reloads
@@ -84,11 +84,11 @@ nothing passes `--force` by default.
 
 The graph opens as an editor tab. Three ways in:
 
-- The **Braid** button in the status bar (hidden when the workspace has no repository)
+- The **Weft** button in the status bar (hidden when the workspace has no repository)
 - The branch icon in the **Source Control** title bar
-- **Braid: Open Git Graph** in the command palette
+- **Weft: Open Git Graph** in the command palette
 
-Braid has no Activity Bar icon of its own. Its three sections - **Commit Files**, **Branches &
+Weft has no Activity Bar icon of its own. Its three sections - **Commit Files**, **Branches &
 Tags** and **Authors** - live in **Source Control**, under the changes list: collapsed until you
 want them, and absent altogether in a workspace with no repository. Unticking a ref there narrows
 what `git log` walks, so a repository carrying two hundred `origin/dependabot/*` branches stops
@@ -106,9 +106,9 @@ points. Measured on a 100k-commit repository: 100,000 rows of graph, 7,998 point
 
 **The network actions are not the ones Source Control already has.** They look like duplicates and
 are not: `git.fetchOnPull` is off by default, so the built-in pull fetches only the branch it is
-about to merge and leaves the rest of the graph as stale as it found it. Braid's fetches the whole
+about to merge and leaves the rest of the graph as stale as it found it. Weft's fetches the whole
 remote, then re-reads the counts before deciding anything. `git.rebaseWhenSync` is off too, so a
-divergence becomes a merge commit without being mentioned; Braid asks, and says what rebase does to
+divergence becomes a merge commit without being mentioned; Weft asks, and says what rebase does to
 the hashes before it does it. Behind but not ahead is `merge --ff-only`, so there is no accidental
 merge commit at all. The buttons are the duplication; the behaviour is the reason.
 
@@ -141,9 +141,9 @@ a file list is narrow and tall. Ten files in a 200px strip under a 20,000-row hi
 shape for both, so the list is a tree view now - which also means folding, status colours and
 one-click opening come from VS Code rather than from three hundred lines of webview.
 
-**The checkboxes are Braid's, not VS Code's.** A tree view manages checkbox state itself unless
+**The checkboxes are Weft's, not VS Code's.** A tree view manages checkbox state itself unless
 told otherwise, and what it means by a ticked parent is "every child is ticked" - which it will
-enforce at the next render. Braid means something else by a ticked group: "some of these are
+enforce at the next render. Weft means something else by a ticked group: "some of these are
 showing". The two disagreeing looked like unticking a branch putting its own tick straight back on,
 and the fix is one flag saying who owns them.
 
@@ -215,7 +215,7 @@ npm run build && node scripts/preview.mjs <repo> --max=20000 && node scripts/ser
 To build a large repository to test against:
 
 ```bash
-node scripts/make-fixture.mjs /tmp/braid-100k 100000
+node scripts/make-fixture.mjs /tmp/weft-100k 100000
 ```
 
 Tests run on Node's built-in runner with native TypeScript type stripping, so there is no test

@@ -2,7 +2,7 @@
  * The Branches & Tags sidebar: which refs the graph should draw.
  *
  * It is a section in Source Control rather than an Activity Bar icon of its own - one place for the
- * repository, next to the changes list, rather than two. A filter is the one piece of Braid that
+ * repository, next to the changes list, rather than two. A filter is the one piece of Weft that
  * genuinely wants to stay on screen while you work, rather than living in a dropdown above the
  * graph that has to be reopened every time.
  *
@@ -192,7 +192,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
 
   /** Whether a text filter is on, so the button that applies it can be offered only then. */
   private publishFiltering(): void {
-    void vscode.commands.executeCommand('setContext', 'braid.refsListFiltered', this.query.length > 0);
+    void vscode.commands.executeCommand('setContext', 'weft.refsListFiltered', this.query.length > 0);
   }
 
   get filterText(): string {
@@ -236,7 +236,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
       item.id = `group:${node.id}`;
       item.description = shown === children.length ? `${children.length}` : `${shown}/${children.length}`;
       item.checkboxState = shown > 0 ? Checked : Unchecked;
-      item.contextValue = 'braidRefGroup';
+      item.contextValue = 'weftRefGroup';
       item.tooltip = `Untick to keep every one of these out of the graph`;
       return item;
     }
@@ -244,7 +244,7 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
     item.id = `ref:${node.refName}`;
     item.checkboxState = this.hidden.has(node.refName) ? Unchecked : Checked;
-    item.contextValue = 'braidRef';
+    item.contextValue = 'weftRef';
     item.tooltip = `${node.refName}\nUntick to keep it out of the graph`;
 
     item.iconPath = new vscode.ThemeIcon(

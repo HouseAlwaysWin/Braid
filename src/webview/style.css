@@ -1,25 +1,25 @@
 /*
- * Everything visual comes from VS Code's own theme variables, so Braid follows light, dark and
+ * Everything visual comes from VS Code's own theme variables, so Weft follows light, dark and
  * high-contrast themes without knowing which one is active. The lane palette is built on the
  * `charts` colours because those are the ones a theme author picks to be distinguishable from each
  * other rather than to sit quietly in the editor chrome.
  */
 
 :root {
-  --braid-bg: var(--vscode-editor-background);
-  --braid-fg: var(--vscode-editor-foreground);
-  --braid-row-height: 24px;
+  --weft-bg: var(--vscode-editor-background);
+  --weft-fg: var(--vscode-editor-foreground);
+  --weft-row-height: 24px;
 
-  --braid-lane-0: var(--vscode-charts-blue, #3794ff);
-  --braid-lane-1: var(--vscode-charts-green, #89d185);
-  --braid-lane-2: var(--vscode-charts-orange, #d18616);
-  --braid-lane-3: var(--vscode-charts-purple, #b180d7);
-  --braid-lane-4: var(--vscode-charts-red, #f14c4c);
-  --braid-lane-5: var(--vscode-charts-yellow, #cca700);
-  --braid-lane-6: var(--vscode-charts-foreground, #cccccc);
-  --braid-lane-7: var(--vscode-charts-blue, #3794ff);
-  --braid-lane-8: var(--vscode-charts-green, #89d185);
-  --braid-lane-9: var(--vscode-charts-purple, #b180d7);
+  --weft-lane-0: var(--vscode-charts-blue, #3794ff);
+  --weft-lane-1: var(--vscode-charts-green, #89d185);
+  --weft-lane-2: var(--vscode-charts-orange, #d18616);
+  --weft-lane-3: var(--vscode-charts-purple, #b180d7);
+  --weft-lane-4: var(--vscode-charts-red, #f14c4c);
+  --weft-lane-5: var(--vscode-charts-yellow, #cca700);
+  --weft-lane-6: var(--vscode-charts-foreground, #cccccc);
+  --weft-lane-7: var(--vscode-charts-blue, #3794ff);
+  --weft-lane-8: var(--vscode-charts-green, #89d185);
+  --weft-lane-9: var(--vscode-charts-purple, #b180d7);
 
   /*
    * Author tint. The hue is per name (see authorColor.ts); the lightness and chroma are per theme
@@ -30,9 +30,9 @@
    *
    * These are dark-theme values. `scripts/color-check.mjs` measures what they actually produce.
    */
-  --braid-author-hue: 0;
-  --braid-author-l: 70%;
-  --braid-author-c: 0.105;
+  --weft-author-hue: 0;
+  --weft-author-l: 70%;
+  --weft-author-c: 0.105;
 
   /*
    * The columns, declared once. The header row and every commit row lay themselves out with this
@@ -42,15 +42,15 @@
    * `ch` resolves in the *grid container's* font, and both containers use the body font, so the
    * cells inside them are free to be a size of their own without moving the boundaries.
    */
-  --braid-columns: minmax(6ch, 1fr) 16ch 10ch 9ch;
-  --braid-column-gap: 8px;
+  --weft-columns: minmax(6ch, 1fr) 16ch 10ch 9ch;
+  --weft-column-gap: 8px;
 }
 
 /* A light theme is not a dark theme inverted: readable text on white has to be darker *and* can
  * carry more chroma before it looks garish. */
 body.vscode-light {
-  --braid-author-l: 55%;
-  --braid-author-c: 0.095;
+  --weft-author-l: 55%;
+  --weft-author-c: 0.095;
 }
 
 html,
@@ -59,8 +59,8 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: var(--braid-bg);
-  color: var(--braid-fg);
+  background: var(--weft-bg);
+  color: var(--weft-fg);
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
 }
@@ -111,7 +111,7 @@ body {
 
 .ahead,
 .behind {
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 .gone {
@@ -140,10 +140,10 @@ body {
  */
 #columns {
   display: grid;
-  grid-template-columns: var(--braid-columns);
+  grid-template-columns: var(--weft-columns);
   align-items: center;
-  gap: var(--braid-column-gap);
-  height: var(--braid-row-height);
+  gap: var(--weft-column-gap);
+  height: var(--weft-row-height);
   padding-right: 12px;
   box-sizing: border-box;
   flex: 0 0 auto;
@@ -170,7 +170,7 @@ body {
 }
 
 #columns .col:hover:enabled {
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 #columns .col:focus-visible {
@@ -180,7 +180,7 @@ body {
 
 /* The column being sorted by stops reading as chrome and starts reading as state. */
 #columns .col.sorted {
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 /*
@@ -226,7 +226,7 @@ body.flat #graph {
 #clear-sort:hover,
 #clear-filters:hover,
 #compare-mark:hover {
-  color: var(--braid-fg);
+  color: var(--weft-fg);
   border-color: var(--vscode-focusBorder, #0078d4);
 }
 
@@ -269,12 +269,12 @@ body.flat #graph {
   position: absolute;
   left: 0;
   right: 0;
-  height: var(--braid-row-height);
-  line-height: var(--braid-row-height);
+  height: var(--weft-row-height);
+  line-height: var(--weft-row-height);
   display: grid;
-  grid-template-columns: var(--braid-columns);
+  grid-template-columns: var(--weft-columns);
   align-items: center;
-  gap: var(--braid-column-gap);
+  gap: var(--weft-column-gap);
   white-space: nowrap;
   box-sizing: border-box;
   padding-right: 12px;
@@ -289,7 +289,7 @@ body.flat #graph {
 .cell-subject {
   display: flex;
   align-items: center;
-  gap: var(--braid-column-gap);
+  gap: var(--weft-column-gap);
   min-width: 0;
   overflow: hidden;
 }
@@ -340,10 +340,10 @@ body.flat #graph {
 
 /*
  * Opt-in by class rather than opt-out, so the plain grey is what shows if the hue never arrives.
- * The other way round, a missing `--braid-author-hue` would paint every name the same pink.
+ * The other way round, a missing `--weft-author-hue` would paint every name the same pink.
  */
 body.author-tint .row .author {
-  color: oklch(var(--braid-author-l) var(--braid-author-c) var(--braid-author-hue));
+  color: oklch(var(--weft-author-l) var(--weft-author-c) var(--weft-author-hue));
 }
 
 /*
@@ -436,7 +436,7 @@ body.vscode-high-contrast.author-tint .row .author {
   overflow: auto;
   border-top: 1px solid var(--vscode-panel-border, #454545);
   padding: 10px 12px 14px;
-  background: var(--vscode-editorWidget-background, var(--braid-bg));
+  background: var(--vscode-editorWidget-background, var(--weft-bg));
 }
 
 #detail-meta > div {
@@ -570,7 +570,7 @@ body.vscode-high-contrast.author-tint .row .author {
 
 #date-close:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 #search-input {
@@ -609,11 +609,11 @@ body.vscode-high-contrast.author-tint .row .author {
 
 .toggle:hover {
   background: var(--vscode-inputOption-hoverBackground, var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.2)));
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 .toggle.on {
-  color: var(--vscode-inputOption-activeForeground, var(--braid-fg));
+  color: var(--vscode-inputOption-activeForeground, var(--weft-fg));
   background: var(--vscode-inputOption-activeBackground, rgba(0, 120, 212, 0.4));
   border-color: var(--vscode-inputOption-activeBorder, transparent);
 }
@@ -648,7 +648,7 @@ body.vscode-high-contrast.author-tint .row .author {
 }
 
 .person {
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 .email,
@@ -672,7 +672,7 @@ body.vscode-high-contrast.author-tint .row .author {
 .body-subject {
   display: block;
   font-weight: 600;
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 .body-rest {
@@ -714,7 +714,7 @@ body.vscode-high-contrast.author-tint .row .author {
   border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border, #454545));
   border-radius: 5px;
   background: var(--vscode-menu-background, var(--vscode-editorWidget-background, #252526));
-  color: var(--vscode-menu-foreground, var(--braid-fg));
+  color: var(--vscode-menu-foreground, var(--weft-fg));
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
   user-select: none;
 }
@@ -785,7 +785,7 @@ body.vscode-high-contrast.author-tint .row .author {
 
 #detail-close:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-  color: var(--braid-fg);
+  color: var(--weft-fg);
 }
 
 /* Keep the metadata clear of the button rather than letting a long hash run under it. */
@@ -802,7 +802,7 @@ body.vscode-high-contrast.author-tint .row .author {
   padding: 8px 12px;
   background: var(--vscode-inputValidation-warningBackground, #352a05);
   border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, #966c1e);
-  color: var(--vscode-inputValidation-warningForeground, var(--braid-fg));
+  color: var(--vscode-inputValidation-warningForeground, var(--weft-fg));
 }
 
 .operation-headline {

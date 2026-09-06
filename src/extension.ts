@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { Git } from './git/exec.ts';
 import type { RepoInfo } from './git/discovery.ts';
 import { discover } from './git/discovery.ts';
-import { BraidPanel, setCommitFiles, setPanelLogger } from './panel.ts';
+import { WeftPanel, setCommitFiles, setPanelLogger } from './panel.ts';
 import { RevisionContentProvider, SCHEME } from './contentProvider.ts';
 import { RefsProvider } from './refsView.ts';
 import { AuthorsProvider } from './authorsView.ts';
@@ -85,10 +85,10 @@ async function findRepository(git: Git): Promise<RepoInfo | null> {
 
 /** Run an action that targets the repository, which needs a graph to run against. */
 function repoAction(id: string): void {
-  const panel = BraidPanel.active();
+  const panel = WeftPanel.active();
 
   if (panel === null) {
-    void vscode.window.showInformationMessage('Braid: open the graph first.');
+    void vscode.window.showInformationMessage('Weft: open the graph first.');
     return;
   }
 
@@ -96,7 +96,7 @@ function repoAction(id: string): void {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  output = vscode.window.createOutputChannel('Braid', { log: true });
+  output = vscode.window.createOutputChannel('Weft', { log: true });
   setPanelLogger(output);
   context.subscriptions.push(output);
 
@@ -106,7 +106,7 @@ export function activate(context: vscode.ExtensionContext): void {
     /*
      * Activation is all or nothing, and its failure is silent by default.
      *
-     * Everything Braid contributes hangs off the end of `start`: the commands are registered there,
+     * Everything Weft contributes hangs off the end of `start`: the commands are registered there,
      * and the three Source Control sections are gated on a context key it sets. An exception
      * anywhere in it therefore does not lose one feature, it loses all of them - and VS Code says
      * nothing beyond a line in a log nobody has open.
@@ -117,10 +117,10 @@ export function activate(context: vscode.ExtensionContext): void {
      */
     const message = err instanceof Error ? err.message : String(err);
 
-    output.error(`Braid failed to activate: ${message}`);
+    output.error(`Weft failed to activate: ${message}`);
 
     void vscode.window
-      .showErrorMessage(`Braid failed to activate: ${message}`, 'Show Log')
+      .showErrorMessage(`Weft failed to activate: ${message}`, 'Show Log')
       .then((choice) => {
         if (choice === 'Show Log') {
           output?.show();
@@ -130,7 +130,7 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 function start(context: vscode.ExtensionContext): void {
-  const config = vscode.workspace.getConfiguration('braid');
+  const config = vscode.workspace.getConfiguration('weft');
 
   const git = new Git({
     maxConcurrent: config.get<number>('maxConcurrentGitProcesses', 4),
@@ -146,13 +146,13 @@ function start(context: vscode.ExtensionContext): void {
   });
 
   const refs = new RefsProvider(git);
-  const refsView = vscode.window.createTreeView('braid.refs', {
+  const refsView = vscode.window.createTreeView('weft.refs', {
     treeDataProvider: refs,
     showCollapseAll: true,
 
     /*
-     * Braid owns the checkboxes, because VS Code and Braid disagree about what a group's tick
-     * means. Braid says "some of these are shown"; VS Code reads a ticked parent as "every child is
+     * Weft owns the checkboxes, because VS Code and Weft disagree about what a group's tick
+     * means. Weft says "some of these are shown"; VS Code reads a ticked parent as "every child is
      * ticked" and drives them all back on - so unticking one branch put the tick straight back,
      * because the group it lives in still had others showing.
      */
@@ -160,14 +160,14 @@ function start(context: vscode.ExtensionContext): void {
   });
 
   const authors = new AuthorsProvider(git);
-  const authorsView = vscode.window.createTreeView('braid.authors', { treeDataProvider: authors });
+  const authorsView = vscode.window.createTreeView('weft.authors', { treeDataProvider: authors });
 
   /*
    * The selected commit's files. `globalState` rather than the workspace's, because tree-or-flat is
    * how someone likes to read a file list, not something about this repository.
    */
   const files = new FilesProvider(context.globalState);
-  const filesView = vscode.window.createTreeView('braid.files', { treeDataProvider: files });
+  const filesView = vscode.window.createTreeView('weft.files', { treeDataProvider: files });
 
   files.attach(filesView);
   setCommitFiles({
@@ -201,28 +201,28 @@ function start(context: vscode.ExtensionContext): void {
      * unfocusing the graph, so `active()` here was reliably null and the filter reliably did
      * nothing - the one place where "the graph the user is looking at" is the wrong graph.
      */
-    refs.onDidChangeFilter(() => BraidPanel.refreshAll()),
-    authors.onDidChangeFilter(() => BraidPanel.refreshAll()),
+    refs.onDidChangeFilter(() => WeftPanel.refreshAll()),
+    authors.onDidChangeFilter(() => WeftPanel.refreshAll()),
 
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, new RevisionContentProvider(git)),
 
-    vscode.commands.registerCommand('braid.openGraph', async () => {
+    vscode.commands.registerCommand('weft.openGraph', async () => {
       if (candidateFolders().length === 0) {
-        void vscode.window.showInformationMessage('Braid: open a folder containing a git repository first.');
+        void vscode.window.showInformationMessage('Weft: open a folder containing a git repository first.');
         return;
       }
 
       const repo = await findRepository(git);
 
       if (repo === null) {
-        void vscode.window.showWarningMessage('Braid: no git repository found in this workspace.');
+        void vscode.window.showWarningMessage('Weft: no git repository found in this workspace.');
         return;
       }
 
       await refs.setRepository(repo);
       authors.setRepository(repo);
 
-      BraidPanel.show(
+      WeftPanel.show(
         context.extensionUri,
         git,
         repo,
@@ -231,16 +231,16 @@ function start(context: vscode.ExtensionContext): void {
       );
     }),
 
-    vscode.commands.registerCommand('braid.showAllRefs', () => refs.showAll()),
+    vscode.commands.registerCommand('weft.showAllRefs', () => refs.showAll()),
 
-    vscode.commands.registerCommand('braid.showOnlyListedRefs', () => refs.showOnlyListed()),
+    vscode.commands.registerCommand('weft.showOnlyListedRefs', () => refs.showOnlyListed()),
 
     /*
      * The sidebar's own actions. They take the node the tree hands them rather than a name typed
      * somewhere, so the full ref name travels with the target and `main` the branch can never be
      * confused with `main` the tag.
      */
-    vscode.commands.registerCommand('braid.showOnlyRef', (node: unknown) => {
+    vscode.commands.registerCommand('weft.showOnlyRef', (node: unknown) => {
       const target = refs.targetOf(node);
 
       if (target !== null) {
@@ -248,35 +248,35 @@ function start(context: vscode.ExtensionContext): void {
       }
     }),
 
-    vscode.commands.registerCommand('braid.checkoutRef', (node: unknown) => {
+    vscode.commands.registerCommand('weft.checkoutRef', (node: unknown) => {
       const target = refs.targetOf(node);
 
       if (target === null) {
         return;
       }
 
-      const panel = BraidPanel.any();
+      const panel = WeftPanel.any();
 
       if (panel === null) {
-        void vscode.window.showInformationMessage('Braid: open the graph first.');
+        void vscode.window.showInformationMessage('Weft: open the graph first.');
         return;
       }
 
       panel.runTargetAction(
-        target.refKind === 'remote' ? 'braid.checkoutRemoteBranch' : 'braid.checkoutBranch',
+        target.refKind === 'remote' ? 'weft.checkoutRemoteBranch' : 'weft.checkoutBranch',
         { kind: 'ref', ...target },
       );
     }),
 
-    vscode.commands.registerCommand('braid.showAllAuthors', () => authors.showAll()),
+    vscode.commands.registerCommand('weft.showAllAuthors', () => authors.showAll()),
 
     /*
      * One gesture for every filter there is, wherever it was set - the two sidebar views and the
      * graph's own search and date range. With no graph open there is nothing to reload, so the two
      * views clear themselves the ordinary way.
      */
-    vscode.commands.registerCommand('braid.clearFilters', () => {
-      const panel = BraidPanel.active();
+    vscode.commands.registerCommand('weft.clearFilters', () => {
+      const panel = WeftPanel.active();
 
       if (panel === null) {
         refs.showAll();
@@ -287,8 +287,8 @@ function start(context: vscode.ExtensionContext): void {
       return panel.clearFilters();
     }),
 
-    vscode.commands.registerCommand('braid.filesAsTree', () => files.setAsTree(true)),
-    vscode.commands.registerCommand('braid.filesAsList', () => files.setAsTree(false)),
+    vscode.commands.registerCommand('weft.filesAsTree', () => files.setAsTree(true)),
+    vscode.commands.registerCommand('weft.filesAsList', () => files.setAsTree(false)),
 
     /*
      * Clicking a file opens its diff. The node arrives from the tree item rather than an index into
@@ -299,23 +299,23 @@ function start(context: vscode.ExtensionContext): void {
      * anything typed, which matters more than usual: `--follow` will not take a case-insensitive
      * pathspec, so the spelling has to be git's own.
      */
-    vscode.commands.registerCommand('braid.showFileHistory', (node: unknown) => {
+    vscode.commands.registerCommand('weft.showFileHistory', (node: unknown) => {
       const target = files.target(node);
-      const panel = BraidPanel.any();
+      const panel = WeftPanel.any();
 
       if (target === null) {
         return;
       }
 
       if (panel === null) {
-        void vscode.window.showInformationMessage('Braid: open the graph first.');
+        void vscode.window.showInformationMessage('Weft: open the graph first.');
         return;
       }
 
       panel.showFileHistory(target.file.path);
     }),
 
-    vscode.commands.registerCommand('braid.openCommitFile', async (node: unknown) => {
+    vscode.commands.registerCommand('weft.openCommitFile', async (node: unknown) => {
       const target = files.target(node);
 
       if (target !== null) {
@@ -329,7 +329,7 @@ function start(context: vscode.ExtensionContext): void {
      * instead of asking you to remember them, and it can react to every keystroke - so the list in
      * the sidebar narrows live behind it rather than only once you press Enter.
      */
-    vscode.commands.registerCommand('braid.filterRefs', () => {
+    vscode.commands.registerCommand('weft.filterRefs', () => {
       const picker = vscode.window.createQuickPick<vscode.QuickPickItem & { ref?: string }>();
       const before = refs.filterText;
 
@@ -369,7 +369,7 @@ function start(context: vscode.ExtensionContext): void {
       picker.show();
     }),
 
-    vscode.commands.registerCommand('braid.stash', () => repoAction('braid.stashPush')),
+    vscode.commands.registerCommand('weft.stash', () => repoAction('weft.stashPush')),
 
     /*
      * Fetch, pull and push, whose command ids are their action ids. Force push is deliberately not
@@ -377,26 +377,26 @@ function start(context: vscode.ExtensionContext): void {
      * someone else's clone, and a button for it one pixel from Push is an accident waiting to
      * happen. The command palette is far enough away to be a decision.
      */
-    ...['braid.fetch', 'braid.pull', 'braid.push', 'braid.pushForce'].map((id) =>
+    ...['weft.fetch', 'weft.pull', 'weft.push', 'weft.pushForce'].map((id) =>
       vscode.commands.registerCommand(id, () => repoAction(id)),
     ),
 
-    vscode.commands.registerCommand('braid.refresh', () => {
-      const panel = BraidPanel.active();
+    vscode.commands.registerCommand('weft.refresh', () => {
+      const panel = WeftPanel.active();
 
       if (panel === null) {
-        void vscode.window.showInformationMessage('Braid: no graph is open.');
+        void vscode.window.showInformationMessage('Weft: no graph is open.');
         return;
       }
 
       panel.refresh();
     }),
 
-    vscode.commands.registerCommand('braid.showGitLog', () => output?.show()),
+    vscode.commands.registerCommand('weft.showGitLog', () => output?.show()),
   );
 
   /*
-   * One click to the graph itself. Braid's two views sit in Source Control, and a view container
+   * One click to the graph itself. Weft's two views sit in Source Control, and a view container
    * opens views rather than running commands, so the status bar is what gets you straight to the
    * thing you came for.
    *
@@ -404,31 +404,31 @@ function start(context: vscode.ExtensionContext): void {
    * open is worse than no entry point.
    */
   const statusBar = vscode.window.createStatusBarItem(
-    'braid.open',
+    'weft.open',
     vscode.StatusBarAlignment.Left,
     100,
   );
 
-  statusBar.name = 'Braid';
-  statusBar.text = '$(git-branch) Braid';
-  statusBar.tooltip = 'Open the Braid commit graph';
-  statusBar.command = 'braid.openGraph';
+  statusBar.name = 'Weft';
+  statusBar.text = '$(git-branch) Weft';
+  statusBar.tooltip = 'Open the Weft commit graph';
+  statusBar.command = 'weft.openGraph';
   context.subscriptions.push(statusBar);
 
   /*
    * Does this workspace have a repository at all?
    *
-   * Two things hang off the answer: the status bar entry, and whether Braid's two views appear in
+   * Two things hang off the answer: the status bar entry, and whether Weft's two views appear in
    * Source Control. A workspace with nothing to graph should not carry two collapsed sections under
-   * someone else's changes list - Braid is a guest in that container now, not the owner of its own.
+   * someone else's changes list - Weft is a guest in that container now, not the owner of its own.
    */
   const updatePresence = async (): Promise<void> => {
     const repo = await findRepository(git);
 
-    await vscode.commands.executeCommand('setContext', 'braid.hasRepository', repo !== null);
+    await vscode.commands.executeCommand('setContext', 'weft.hasRepository', repo !== null);
 
     const enabled = vscode.workspace
-      .getConfiguration('braid')
+      .getConfiguration('weft')
       .get<boolean>('statusBar.enabled', true);
 
     if (repo === null || !enabled) {
@@ -445,7 +445,7 @@ function start(context: vscode.ExtensionContext): void {
      * re-pointing them at another repository underneath it would filter a history by refs it has
      * never heard of.
      */
-    if (BraidPanel.active() === null) {
+    if (WeftPanel.active() === null) {
       authors.setRepository(repo);
       await refs.setRepository(repo);
     }
@@ -471,7 +471,7 @@ function start(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(schedulePresenceUpdate),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('braid.statusBar.enabled')) {
+      if (event.affectsConfiguration('weft.statusBar.enabled')) {
         schedulePresenceUpdate();
       }
     }),
@@ -488,7 +488,7 @@ function start(context: vscode.ExtensionContext): void {
 
   void updatePresence();
 
-  output?.info('Braid activated');
+  output?.info('Weft activated');
 }
 
 export function deactivate(): void {

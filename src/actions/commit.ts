@@ -11,7 +11,7 @@
  * **Reset is three different operations wearing one name.** They differ only in what survives, so
  * they are three actions with three tiers rather than one action with a mode argument: `--soft` and
  * `--mixed` move a ref and leave every byte of work in place, while `--hard` is the only thing in
- * Braid that can destroy uncommitted work outright.
+ * Weft that can destroy uncommitted work outright.
  */
 
 import type { Action } from './types.ts';
@@ -41,7 +41,7 @@ function movedRef(state: { branch: string | null }): string {
 }
 
 const cherryPick: Action = {
-  id: 'braid.cherryPick',
+  id: 'weft.cherryPick',
   group: 'commit',
   tier: Tier.Safe,
 
@@ -84,7 +84,7 @@ const cherryPick: Action = {
 };
 
 const revert: Action = {
-  id: 'braid.revert',
+  id: 'weft.revert',
   group: 'commit',
   tier: Tier.Safe,
 
@@ -122,7 +122,7 @@ function resetAction(
   options: { tier: Tier; label: (at: string) => string; keeps: string },
 ): Action {
   return {
-    id: `braid.reset${mode.charAt(0).toUpperCase()}${mode.slice(1)}`,
+    id: `weft.reset${mode.charAt(0).toUpperCase()}${mode.slice(1)}`,
     group: 'danger',
     tier: options.tier,
 

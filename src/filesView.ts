@@ -48,7 +48,7 @@ const STATUS_ICON: Record<string, { readonly icon: string; readonly color: strin
   '?': { icon: 'diff-added', color: 'gitDecoration.untrackedResourceForeground' },
 };
 
-const TREE_KEY = 'braid.filesAsTree';
+const TREE_KEY = 'weft.filesAsTree';
 
 interface Folder {
   readonly kind: 'folder';
@@ -345,7 +345,7 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
 
     // A file node is the only thing the history command can act on, so it is the only thing that
     // offers it.
-    item.contextValue = 'braidFile';
+    item.contextValue = 'weftFile';
 
     if (status !== undefined) {
       item.iconPath = new vscode.ThemeIcon(status.icon, new vscode.ThemeColor(status.color));
@@ -368,7 +368,7 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
         ? `${label}: ${file.path}`
         : `${label}: ${file.oldPath} → ${file.path}`;
 
-    item.command = { command: 'braid.openCommitFile', title: 'Open Changes', arguments: [node] };
+    item.command = { command: 'weft.openCommitFile', title: 'Open Changes', arguments: [node] };
 
     return item;
   }
@@ -423,6 +423,6 @@ export class FilesProvider implements vscode.TreeDataProvider<Node> {
 
   /** Which of the two title-bar buttons to offer: the one for the mode you are not already in. */
   private publishMode(): void {
-    void vscode.commands.executeCommand('setContext', 'braid.filesAsTree', this.asTree);
+    void vscode.commands.executeCommand('setContext', 'weft.filesAsTree', this.asTree);
   }
 }

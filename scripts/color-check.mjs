@@ -139,15 +139,15 @@ const themes = [
     // Dark Modern and Light Modern, the same values the preview harness uses.
     background: '#1f1f1f',
     baseline: '#9d9d9d',
-    L: number(cssVar(css, 'braid-author-l')),
-    C: number(cssVar(css, 'braid-author-c')),
+    L: number(cssVar(css, 'weft-author-l')),
+    C: number(cssVar(css, 'weft-author-c')),
   },
   {
     name: 'light',
     background: '#ffffff',
     baseline: '#717171',
-    L: number(cssVar(css, 'braid-author-l', 'body.vscode-light')),
-    C: number(cssVar(css, 'braid-author-c', 'body.vscode-light')),
+    L: number(cssVar(css, 'weft-author-l', 'body.vscode-light')),
+    C: number(cssVar(css, 'weft-author-c', 'body.vscode-light')),
   },
 ];
 

@@ -33,4 +33,4 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404).end('not found');
   }
-}).listen(4173, () => console.log('braid preview on http://localhost:4173/'));
+}).listen(4173, () => console.log('weft preview on http://localhost:4173/'));

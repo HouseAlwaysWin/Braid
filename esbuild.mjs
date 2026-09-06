@@ -41,8 +41,8 @@ const configs = [extensionConfig, webviewConfig];
 if (watch) {
   const contexts = await Promise.all(configs.map((c) => esbuild.context(c)));
   await Promise.all(contexts.map((c) => c.watch()));
-  console.log('[braid] watching…');
+  console.log('[weft] watching…');
 } else {
   await Promise.all(configs.map((c) => esbuild.build(c)));
-  console.log(`[braid] built${production ? ' (production)' : ''}`);
+  console.log(`[weft] built${production ? ' (production)' : ''}`);
 }

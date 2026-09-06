@@ -5,7 +5,7 @@
  *
  * - **The URI path must end with the real filename.** VS Code picks the language mode - and
  *   therefore the syntax highlighting in the diff - from the path's extension. A URI of
- *   `braid-git:/abc123` opens every diff as plain text.
+ *   `weft-git:/abc123` opens every diff as plain text.
  * - **Content is addressed by blob OID, not by `<commit>:<path>`.** A renamed file has a different
  *   path on each side, so path addressing needs rename resolution that the raw diff already did
  *   for us.
@@ -15,7 +15,7 @@ import * as vscode from 'vscode';
 
 import type { Git } from './git/exec.ts';
 
-export const SCHEME = 'braid-git';
+export const SCHEME = 'weft-git';
 
 interface Revision {
   readonly repo: string;
@@ -101,7 +101,7 @@ export class RevisionContentProvider implements vscode.TextDocumentContentProvid
       // A text document cannot hold binary content: it would be mangled on the way through and the
       // diff would be nonsense. Say so instead of pretending.
       const content = raw.slice(0, 8192).includes('\x00')
-        ? `// Braid: this revision is a binary file (${raw.length} bytes) and has no text diff.\n`
+        ? `// Weft: this revision is a binary file (${raw.length} bytes) and has no text diff.\n`
         : raw;
 
       // Bound the cache: a session spent clicking through a large repository would otherwise hold
@@ -116,7 +116,7 @@ export class RevisionContentProvider implements vscode.TextDocumentContentProvid
 
       return content;
     } catch (err) {
-      return `// Braid could not read this revision.\n// ${err instanceof Error ? err.message : String(err)}\n`;
+      return `// Weft could not read this revision.\n// ${err instanceof Error ? err.message : String(err)}\n`;
     }
   }
 }

@@ -1,9 +1,9 @@
 /**
- * The built-in git extension, used only for the things it notices before Braid could.
+ * The built-in git extension, used only for the things it notices before Weft could.
  *
- * Braid runs the git CLI itself and does not want an intermediary, but VS Code's own git extension
+ * Weft runs the git CLI itself and does not want an intermediary, but VS Code's own git extension
  * is already polling: it knows when a repository is opened and when the working tree changes, and
- * both are events Braid has no way to generate for itself. `RepoWatcher` watches `.git`, which is
+ * both are events Weft has no way to generate for itself. `RepoWatcher` watches `.git`, which is
  * exactly right for refs and exactly wrong for a file being saved.
  *
  * Nothing here is load-bearing. The API is exported but effectively unversioned, so every path
@@ -68,7 +68,7 @@ function pending(work: (add: (subscription: vscode.Disposable) => void) => Promi
 /**
  * Call `onChange` when a repository is opened or closed.
  *
- * Braid's own discovery is a filesystem walk with nothing to subscribe to, so a repository that
+ * Weft's own discovery is a filesystem walk with nothing to subscribe to, so a repository that
  * appears after startup - a `git init`, or a clone into a folder that is already open - would
  * otherwise stay invisible until the window is reloaded, and the Source Control sections with it.
  */
@@ -114,7 +114,7 @@ export function watchWorkingTree(root: string, onChange: () => void): { dispose(
       }
     }
 
-    // The repository may not be open yet - Braid finds repositories the git extension has not been
+    // The repository may not be open yet - Weft finds repositories the git extension has not been
     // asked about, and a bare one it will never open at all.
     add(
       git.onDidOpenRepository((repository) => {

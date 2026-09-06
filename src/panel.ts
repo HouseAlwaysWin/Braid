@@ -82,7 +82,7 @@ const REMEDY_LABELS: Record<Remedy, string> = {
   [Remedy.ShowLog]: 'Show Git Log',
 };
 
-export const VIEW_TYPE = 'braid.graph';
+export const VIEW_TYPE = 'weft.graph';
 
 function describe(repo: RepoInfo): string | null {
   if (repo.isBare) {
@@ -110,15 +110,15 @@ function nonce(): string {
   return out;
 }
 
-export class BraidPanel {
-  private static readonly open = new Map<string, BraidPanel>();
-  private static current: BraidPanel | null = null;
+export class WeftPanel {
+  private static readonly open = new Map<string, WeftPanel>();
+  private static current: WeftPanel | null = null;
   /** Shared across panels: two graphs on the same repository must not write at once. */
   private static readonly lock = new RepoLock();
 
   /** The graph the user is looking at, for commands that act on "this graph". */
-  static active(): BraidPanel | null {
-    return BraidPanel.current;
+  static active(): WeftPanel | null {
+    return WeftPanel.current;
   }
 
   /**
@@ -129,14 +129,14 @@ export class BraidPanel {
    * focus away from it - so a filter that reloaded `active()` reloaded nothing at all, every time.
    */
   static refreshAll(): void {
-    for (const panel of BraidPanel.open.values()) {
+    for (const panel of WeftPanel.open.values()) {
       panel.refresh();
     }
   }
 
   /** Any open graph, for a sidebar action that needs one to run against. */
-  static any(): BraidPanel | null {
-    return BraidPanel.current ?? BraidPanel.open.values().next().value ?? null;
+  static any(): WeftPanel | null {
+    return WeftPanel.current ?? WeftPanel.open.values().next().value ?? null;
   }
 
   private readonly panel: vscode.WebviewPanel;
@@ -200,14 +200,14 @@ export class BraidPanel {
     // AbortSignal for the same reason - actions never see a vscode type.
     progress: async (title, work, cancellable = false) =>
       vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Braid: ${title}`, cancellable },
+        { location: vscode.ProgressLocation.Notification, title: `Weft: ${title}`, cancellable },
         (_report, token) => {
           const controller = new AbortController();
           token.onCancellationRequested(() => controller.abort());
           return work(controller.signal);
         },
       ),
-    notify: (message) => void vscode.window.setStatusBarMessage(`Braid: ${message}`, 4000),
+    notify: (message) => void vscode.window.setStatusBarMessage(`Weft: ${message}`, 4000),
   };
 
   static show(
@@ -216,8 +216,8 @@ export class BraidPanel {
     repo: RepoInfo,
     column: vscode.ViewColumn,
     filters: FilterSource,
-  ): BraidPanel {
-    const existing = BraidPanel.open.get(repo.root);
+  ): WeftPanel {
+    const existing = WeftPanel.open.get(repo.root);
     if (existing !== undefined) {
       existing.panel.reveal(column);
       return existing;
@@ -225,7 +225,7 @@ export class BraidPanel {
 
     const panel = vscode.window.createWebviewPanel(
       VIEW_TYPE,
-      `Braid: ${repo.root.split('/').pop() ?? 'Graph'}`,
+      `Weft: ${repo.root.split('/').pop() ?? 'Graph'}`,
       column,
       {
         enableScripts: true,
@@ -236,9 +236,9 @@ export class BraidPanel {
       },
     );
 
-    const braid = new BraidPanel(panel, extensionUri, git, repo, filters);
-    BraidPanel.open.set(repo.root, braid);
-    return braid;
+    const weft = new WeftPanel(panel, extensionUri, git, repo, filters);
+    WeftPanel.open.set(repo.root, weft);
+    return weft;
   }
 
   private constructor(
@@ -266,7 +266,7 @@ export class BraidPanel {
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
     const debounce = vscode.workspace
-      .getConfiguration('braid')
+      .getConfiguration('weft')
       .get<number>('refreshDebounceMs', 600);
 
     this.watcher = new RepoWatcher(repo, () => void this.onRepositoryChanged(), debounce);
@@ -274,7 +274,7 @@ export class BraidPanel {
 
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration('braid.autoFetchMinutes')) {
+        if (event.affectsConfiguration('weft.autoFetchMinutes')) {
           this.startAutoFetch();
         }
       }),
@@ -295,7 +295,7 @@ export class BraidPanel {
   private async onRepositoryChanged(): Promise<void> {
     // A write in flight touches refs constantly. Its own reload comes at the end; reacting here as
     // well would reload the graph from the middle of a half-finished operation.
-    if (BraidPanel.lock.isBusy(this.repo.root)) {
+    if (WeftPanel.lock.isBusy(this.repo.root)) {
       return;
     }
 
@@ -325,20 +325,20 @@ export class BraidPanel {
   }
 
   /**
-   * Track which graph is in front, and mirror it into a context key so `Braid: Refresh` only
+   * Track which graph is in front, and mirror it into a context key so `Weft: Refresh` only
    * offers itself in the command palette when there is actually a graph to refresh.
    */
   private setActive(active: boolean): void {
     if (active) {
-      BraidPanel.current = this;
-    } else if (BraidPanel.current === this) {
-      BraidPanel.current = null;
+      WeftPanel.current = this;
+    } else if (WeftPanel.current === this) {
+      WeftPanel.current = null;
     }
 
     void vscode.commands.executeCommand(
       'setContext',
-      'braid.graphVisible',
-      BraidPanel.current !== null,
+      'weft.graphVisible',
+      WeftPanel.current !== null,
     );
   }
 
@@ -399,7 +399,7 @@ export class BraidPanel {
         break;
       case 'copy':
         await vscode.env.clipboard.writeText(message.text);
-        void vscode.window.setStatusBarMessage('Braid: copied', 2000);
+        void vscode.window.setStatusBarMessage('Weft: copied', 2000);
         break;
       case 'selectCommit':
         await this.showDetails(message.sha);
@@ -453,7 +453,7 @@ export class BraidPanel {
     }
 
     try {
-      const result = await BraidPanel.lock.run(this.repo.root, async () => {
+      const result = await WeftPanel.lock.run(this.repo.root, async () => {
         const state = await readRepoState(this.git, this.repo);
         const unavailable = action.unavailable(target, state);
 
@@ -483,7 +483,7 @@ export class BraidPanel {
       await this.reload();
 
       const back = result.before === null ? '' : `  (was ${result.before.slice(0, 8)})`;
-      void vscode.window.setStatusBarMessage(`Braid: ${result.outcome.message}${back}`, 5000);
+      void vscode.window.setStatusBarMessage(`Weft: ${result.outcome.message}${back}`, 5000);
       return result.outcome.ran;
     } catch (err) {
       // One retry, never two: an offer to stash and retry that fails the same way must not become
@@ -532,16 +532,16 @@ export class BraidPanel {
         return;
 
       case Remedy.AbortOperation:
-        await this.runAction('braid.abortOperation', { kind: 'repo' });
+        await this.runAction('weft.abortOperation', { kind: 'repo' });
         return;
 
       case Remedy.Fetch:
-        await this.runAction('braid.fetch', { kind: 'repo' });
+        await this.runAction('weft.fetch', { kind: 'repo' });
         return;
 
       case Remedy.StashAndRetry:
         // Only retry if the stash actually happened - otherwise the retry hits the same wall.
-        if (await this.runAction('braid.stashPush', { kind: 'repo' })) {
+        if (await this.runAction('weft.stashPush', { kind: 'repo' })) {
           await retry?.();
         }
 
@@ -724,7 +724,7 @@ export class BraidPanel {
     const controller = new AbortController();
     this.loading = controller;
 
-    const config = vscode.workspace.getConfiguration('braid');
+    const config = vscode.workspace.getConfiguration('weft');
 
     this.post({ type: 'reset', filtered: this.isFiltered() });
     this.post({
@@ -829,7 +829,7 @@ export class BraidPanel {
     const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'style.css'));
     const n = nonce();
 
-    // connect-src 'none' is worth stating outright: Braid never makes a network request, and the
+    // connect-src 'none' is worth stating outright: Weft never makes a network request, and the
     // policy should be able to prove that rather than asking to be trusted on it.
     return `<!DOCTYPE html>
 <html lang="en">
@@ -838,7 +838,7 @@ export class BraidPanel {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${n}'; connect-src 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="${style.toString()}" rel="stylesheet">
-<title>Braid</title>
+<title>Weft</title>
 </head>
 <body>
 ${BODY_MARKUP}
@@ -852,7 +852,7 @@ ${BODY_MARKUP}
    *
    * Off by default, and deliberately: fetching is the one thing here that leaves the machine, and
    * doing it unasked is a decision for the person whose network it is. VS Code's own `git.autofetch`
-   * does the same job, and Braid picks up whatever it does - the watcher sees the refs move.
+   * does the same job, and Weft picks up whatever it does - the watcher sees the refs move.
    */
   private startAutoFetch(): void {
     if (this.fetchTimer !== null) {
@@ -861,7 +861,7 @@ ${BODY_MARKUP}
     }
 
     const minutes = vscode.workspace
-      .getConfiguration('braid')
+      .getConfiguration('weft')
       .get<number>('autoFetchMinutes', 0);
 
     if (minutes <= 0) {
@@ -877,11 +877,11 @@ ${BODY_MARKUP}
    * Quiet in both directions: no progress notification, because nobody asked for this one; and no
    * error popup, because every reason a background fetch fails - offline, a VPN, a credential
    * helper that has forgotten - is something the user finds out the moment they ask for one
-   * themselves. `GIT_TERMINAL_PROMPT=0` is set for every command Braid runs, so the worst case is
+   * themselves. `GIT_TERMINAL_PROMPT=0` is set for every command Weft runs, so the worst case is
    * a failure rather than a child process waiting forever on a password nobody can type.
    */
   private async autoFetch(): Promise<void> {
-    if (BraidPanel.lock.isBusy(this.repo.root) || this.loading !== null) {
+    if (WeftPanel.lock.isBusy(this.repo.root) || this.loading !== null) {
       return;
     }
 
@@ -908,11 +908,11 @@ ${BODY_MARKUP}
 
     this.detailsLoading?.abort();
     this.watcher.dispose();
-    BraidPanel.open.delete(this.repo.root);
+    WeftPanel.open.delete(this.repo.root);
     this.setActive(false);
 
     // With no graph left to select in, the file list is showing a commit nobody can point at.
-    if (BraidPanel.open.size === 0) {
+    if (WeftPanel.open.size === 0) {
       commitFiles?.clear();
     }
 

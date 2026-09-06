@@ -6,7 +6,7 @@
  * the state of the index, and, when `-u` was used, the untracked files. Drawn as-is, every stash
  * becomes a three-way merge blob attached to nothing anyone recognises.
  *
- * So Braid keeps only the first parent. The index and untracked-files parents are how git stores a
+ * So Weft keeps only the first parent. The index and untracked-files parents are how git stores a
  * stash, not something the user put there.
  *
  * The other quirk: only the newest stash is a ref. `stash@{1}` and older live in the reflog of

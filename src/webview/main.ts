@@ -213,7 +213,7 @@ function readPalette(): string[] {
   const out: string[] = [];
 
   for (let i = 0; i < LANE_COLORS; i++) {
-    out.push(style.getPropertyValue(`--braid-lane-${i}`).trim() || '#888');
+    out.push(style.getPropertyValue(`--weft-lane-${i}`).trim() || '#888');
   }
 
   return out;
@@ -362,7 +362,7 @@ function renderRows(indent: number): void {
     author.title = row.author;
     appendMarked(author, row.author, searchMode.value === 'author' ? highlight : null);
     // Only the hue: the stylesheet holds the lightness, so the tint follows the theme.
-    author.style.setProperty('--braid-author-hue', `${authorHue(row.author)}`);
+    author.style.setProperty('--weft-author-hue', `${authorHue(row.author)}`);
     el.append(author);
 
     const date = document.createElement('span');
@@ -577,7 +577,7 @@ const operationEl = document.getElementById('operation') as HTMLElement;
  * other action means, and a graph that draws history without mentioning it is how someone ends up
  * several commands deep in a state they did not know they were in.
  *
- * Conflicted files are listed and clickable. Braid does not resolve them - VS Code's merge editor
+ * Conflicted files are listed and clickable. Weft does not resolve them - VS Code's merge editor
  * is better at that than anything that would fit here - so clicking one hands it over.
  */
 function renderOperation(
@@ -1142,7 +1142,7 @@ function drawGraph(): void {
     if (dot.kind === DotKind.Merge) {
       // A merge is drawn hollow so it reads differently at a glance without needing a legend.
       ctx.fillStyle = getComputedStyle(document.documentElement)
-        .getPropertyValue('--braid-bg')
+        .getPropertyValue('--weft-bg')
         .trim();
       ctx.fill();
       ctx.strokeStyle = color;
@@ -1191,7 +1191,7 @@ function drawWorkingTree(y: (row: number) => number): void {
   // Hollow, like a merge dot: the shape says "this is not a commit" before any of the text does.
   ctx.beginPath();
   ctx.arc(x, top, DOT_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--braid-bg').trim();
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--weft-bg').trim();
   ctx.fill();
   ctx.stroke();
   ctx.setLineDash([]);
@@ -1339,7 +1339,7 @@ window.addEventListener('message', (event: MessageEvent<HostMessage>) => {
   switch (message.type) {
     case 'init':
       rowHeight = message.rowHeight;
-      document.documentElement.style.setProperty('--braid-row-height', `${rowHeight}px`);
+      document.documentElement.style.setProperty('--weft-row-height', `${rowHeight}px`);
       titleEl.textContent = message.kind === null
         ? message.repoName
         : `${message.repoName}  (${message.kind})`;

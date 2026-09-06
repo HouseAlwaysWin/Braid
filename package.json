@@ -1,6 +1,6 @@
 {
-  "name": "braid",
-  "displayName": "Braid — Git Graph",
+  "name": "git-weft",
+  "displayName": "Git Weft",
   "description": "A fast, read-only Git commit graph for VS Code.",
   "version": "0.0.1",
   "publisher": "HouseAlwaysWin",
@@ -22,333 +22,333 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished",
-    "onWebviewPanel:braid.graph"
+    "onWebviewPanel:weft.graph"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "braid.openGraph",
+        "command": "weft.openGraph",
         "title": "Open Git Graph",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(git-branch)"
       },
       {
-        "command": "braid.refresh",
+        "command": "weft.refresh",
         "title": "Refresh",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(refresh)"
       },
       {
-        "command": "braid.showGitLog",
+        "command": "weft.showGitLog",
         "title": "Show Git Command Log",
-        "category": "Braid"
+        "category": "Git Weft"
       },
       {
-        "command": "braid.showAllRefs",
+        "command": "weft.showAllRefs",
         "title": "Show All Branches & Tags",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(clear-all)"
       },
       {
-        "command": "braid.stash",
+        "command": "weft.stash",
         "title": "Stash Changes",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(archive)"
       },
       {
-        "command": "braid.filterRefs",
+        "command": "weft.filterRefs",
         "title": "Filter Branches & Tags…",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(filter)"
       },
       {
-        "command": "braid.showAllAuthors",
+        "command": "weft.showAllAuthors",
         "title": "Show All Authors",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(clear-all)"
       },
       {
-        "command": "braid.checkoutRef",
+        "command": "weft.checkoutRef",
         "title": "Checkout",
-        "category": "Braid"
+        "category": "Git Weft"
       },
       {
-        "command": "braid.showOnlyRef",
+        "command": "weft.showOnlyRef",
         "title": "Show Only This",
-        "category": "Braid"
+        "category": "Git Weft"
       },
       {
-        "command": "braid.showOnlyListedRefs",
+        "command": "weft.showOnlyListedRefs",
         "title": "Show Only What Is Listed",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(filter-filled)"
       },
       {
-        "command": "braid.clearFilters",
+        "command": "weft.clearFilters",
         "title": "Clear All Filters",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(clear-all)"
       },
       {
-        "command": "braid.filesAsTree",
+        "command": "weft.filesAsTree",
         "title": "View Changed Files as Tree",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(list-tree)"
       },
       {
-        "command": "braid.filesAsList",
+        "command": "weft.filesAsList",
         "title": "View Changed Files as List",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(list-flat)"
       },
       {
-        "command": "braid.openCommitFile",
+        "command": "weft.openCommitFile",
         "title": "Open Changes",
-        "category": "Braid"
+        "category": "Git Weft"
       },
       {
-        "command": "braid.showFileHistory",
+        "command": "weft.showFileHistory",
         "title": "Show File History",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(history)"
       },
       {
-        "command": "braid.fetch",
+        "command": "weft.fetch",
         "title": "Fetch",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(cloud-download)"
       },
       {
-        "command": "braid.pull",
+        "command": "weft.pull",
         "title": "Pull",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(arrow-down)"
       },
       {
-        "command": "braid.push",
+        "command": "weft.push",
         "title": "Push",
-        "category": "Braid",
+        "category": "Git Weft",
         "icon": "$(arrow-up)"
       },
       {
-        "command": "braid.pushForce",
+        "command": "weft.pushForce",
         "title": "Force Push (with lease)",
-        "category": "Braid"
+        "category": "Git Weft"
       }
     ],
     "menus": {
       "scm/title": [
         {
-          "command": "braid.openGraph",
+          "command": "weft.openGraph",
           "group": "navigation",
           "when": "scmProvider == git"
         }
       ],
       "commandPalette": [
         {
-          "command": "braid.openCommitFile",
+          "command": "weft.openCommitFile",
           "when": "false"
         },
         {
-          "command": "braid.showFileHistory",
+          "command": "weft.showFileHistory",
           "when": "false"
         },
         {
-          "command": "braid.checkoutRef",
+          "command": "weft.checkoutRef",
           "when": "false"
         },
         {
-          "command": "braid.showOnlyRef",
+          "command": "weft.showOnlyRef",
           "when": "false"
         },
         {
-          "command": "braid.showOnlyListedRefs",
-          "when": "braid.refsListFiltered"
+          "command": "weft.showOnlyListedRefs",
+          "when": "weft.refsListFiltered"
         },
         {
-          "command": "braid.refresh",
-          "when": "braid.graphVisible"
+          "command": "weft.refresh",
+          "when": "weft.graphVisible"
         },
         {
-          "command": "braid.stash",
-          "when": "braid.graphVisible"
+          "command": "weft.stash",
+          "when": "weft.graphVisible"
         },
         {
-          "command": "braid.fetch",
-          "when": "braid.graphVisible"
+          "command": "weft.fetch",
+          "when": "weft.graphVisible"
         },
         {
-          "command": "braid.pull",
-          "when": "braid.graphVisible"
+          "command": "weft.pull",
+          "when": "weft.graphVisible"
         },
         {
-          "command": "braid.push",
-          "when": "braid.graphVisible"
+          "command": "weft.push",
+          "when": "weft.graphVisible"
         },
         {
-          "command": "braid.pushForce",
-          "when": "braid.graphVisible"
+          "command": "weft.pushForce",
+          "when": "weft.graphVisible"
         }
       ],
       "editor/title": [
         {
-          "command": "braid.fetch",
-          "when": "activeWebviewPanelId == braid.graph",
+          "command": "weft.fetch",
+          "when": "activeWebviewPanelId == weft.graph",
           "group": "navigation@1"
         },
         {
-          "command": "braid.pull",
-          "when": "activeWebviewPanelId == braid.graph",
+          "command": "weft.pull",
+          "when": "activeWebviewPanelId == weft.graph",
           "group": "navigation@2"
         },
         {
-          "command": "braid.push",
-          "when": "activeWebviewPanelId == braid.graph",
+          "command": "weft.push",
+          "when": "activeWebviewPanelId == weft.graph",
           "group": "navigation@3"
         }
       ],
       "view/item/context": [
         {
-          "command": "braid.showFileHistory",
-          "when": "view == braid.files && viewItem == braidFile",
+          "command": "weft.showFileHistory",
+          "when": "view == weft.files && viewItem == weftFile",
           "group": "navigation@1"
         },
         {
-          "command": "braid.checkoutRef",
-          "when": "view == braid.refs && viewItem == braidRef",
+          "command": "weft.checkoutRef",
+          "when": "view == weft.refs && viewItem == weftRef",
           "group": "navigation@1"
         },
         {
-          "command": "braid.showOnlyRef",
-          "when": "view == braid.refs && viewItem == braidRef",
+          "command": "weft.showOnlyRef",
+          "when": "view == weft.refs && viewItem == weftRef",
           "group": "filter@1"
         },
         {
-          "command": "braid.showAllRefs",
-          "when": "view == braid.refs && viewItem == braidRef",
+          "command": "weft.showAllRefs",
+          "when": "view == weft.refs && viewItem == weftRef",
           "group": "filter@2"
         }
       ],
       "view/title": [
         {
-          "command": "braid.filterRefs",
-          "when": "view == braid.refs",
+          "command": "weft.filterRefs",
+          "when": "view == weft.refs",
           "group": "navigation@1"
         },
         {
-          "command": "braid.showOnlyListedRefs",
-          "when": "view == braid.refs && braid.refsListFiltered",
+          "command": "weft.showOnlyListedRefs",
+          "when": "view == weft.refs && weft.refsListFiltered",
           "group": "navigation@2"
         },
         {
-          "command": "braid.showAllRefs",
-          "when": "view == braid.refs",
+          "command": "weft.showAllRefs",
+          "when": "view == weft.refs",
           "group": "navigation@2"
         },
         {
-          "command": "braid.openGraph",
-          "when": "view == braid.refs",
+          "command": "weft.openGraph",
+          "when": "view == weft.refs",
           "group": "navigation@3"
         },
         {
-          "command": "braid.showAllAuthors",
-          "when": "view == braid.authors",
+          "command": "weft.showAllAuthors",
+          "when": "view == weft.authors",
           "group": "navigation@1"
         },
         {
-          "command": "braid.filesAsList",
-          "when": "view == braid.files && braid.filesAsTree",
+          "command": "weft.filesAsList",
+          "when": "view == weft.files && weft.filesAsTree",
           "group": "navigation@1"
         },
         {
-          "command": "braid.filesAsTree",
-          "when": "view == braid.files && !braid.filesAsTree",
+          "command": "weft.filesAsTree",
+          "when": "view == weft.files && !weft.filesAsTree",
           "group": "navigation@1"
         }
       ]
     },
     "configuration": {
-      "title": "Braid",
+      "title": "Weft",
       "properties": {
-        "braid.pageSize": {
+        "weft.pageSize": {
           "type": "number",
           "default": 2000,
           "minimum": 100,
           "maximum": 20000,
           "markdownDescription": "How many commits to load per page. The first page is what you wait for on open."
         },
-        "braid.rowHeight": {
+        "weft.rowHeight": {
           "type": "number",
           "default": 24,
           "minimum": 16,
           "maximum": 48,
           "description": "Height of a single commit row, in pixels."
         },
-        "braid.maxConcurrentGitProcesses": {
+        "weft.maxConcurrentGitProcesses": {
           "type": "number",
           "default": 4,
           "minimum": 1,
           "maximum": 16,
-          "description": "Upper bound on git processes Braid runs at once."
+          "description": "Upper bound on git processes Weft runs at once."
         },
-        "braid.refreshDebounceMs": {
+        "weft.refreshDebounceMs": {
           "type": "number",
           "default": 600,
           "minimum": 0,
           "maximum": 5000,
           "description": "Quiet period after repository changes before the graph reloads."
         },
-        "braid.authorColors": {
+        "weft.authorColors": {
           "type": "boolean",
           "default": true,
           "description": "Give each author their own colour in the commit list. Always off in high contrast themes."
         },
-        "braid.networkIdleTimeoutSeconds": {
+        "weft.networkIdleTimeoutSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 0,
           "maximum": 3600,
           "markdownDescription": "Give up on a fetch, pull or push after this many seconds with **no output at all**. This is idle time, not total time, so a slow but live transfer is never cut off. `0` waits forever."
         },
-        "braid.autoFetchMinutes": {
+        "weft.autoFetchMinutes": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 1440,
-          "markdownDescription": "Fetch from every remote this often, in minutes. `0` never fetches on its own.\n\nA remote-tracking ref like `origin/main` only moves when something fetches, so the graph - and the ahead/behind counts beside the title - are only ever as current as the last fetch. Braid picks up whatever moves them, including VS Code's own `#git.autofetch#`, so turn this on only if you would rather Braid did it."
+          "markdownDescription": "Fetch from every remote this often, in minutes. `0` never fetches on its own.\n\nA remote-tracking ref like `origin/main` only moves when something fetches, so the graph - and the ahead/behind counts beside the title - are only ever as current as the last fetch. Weft picks up whatever moves them, including VS Code's own `#git.autofetch#`, so turn this on only if you would rather Weft did it."
         },
-        "braid.statusBar.enabled": {
+        "weft.statusBar.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show a Braid button in the status bar when the workspace has a git repository."
+          "description": "Show a Weft button in the status bar when the workspace has a git repository."
         }
       }
     },
     "views": {
       "scm": [
         {
-          "id": "braid.files",
+          "id": "weft.files",
           "name": "Commit Files",
-          "icon": "media/braid.svg",
-          "contextualTitle": "Braid",
+          "icon": "media/weft.svg",
+          "contextualTitle": "Weft",
           "visibility": "collapsed",
-          "when": "braid.hasRepository"
+          "when": "weft.hasRepository"
         },
         {
-          "id": "braid.refs",
+          "id": "weft.refs",
           "name": "Branches & Tags",
-          "icon": "media/braid.svg",
-          "contextualTitle": "Braid",
+          "icon": "media/weft.svg",
+          "contextualTitle": "Weft",
           "visibility": "collapsed",
-          "when": "braid.hasRepository"
+          "when": "weft.hasRepository"
         },
         {
-          "id": "braid.authors",
+          "id": "weft.authors",
           "name": "Authors",
-          "icon": "media/braid.svg",
-          "contextualTitle": "Braid",
+          "icon": "media/weft.svg",
+          "contextualTitle": "Weft",
           "visibility": "collapsed",
-          "when": "braid.hasRepository"
+          "when": "weft.hasRepository"
         }
       ]
     }
@@ -357,7 +357,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/load-check.mjs --watch && node scripts/load-check.mjs --break-view=braid.files",
+    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/load-check.mjs --watch && node scripts/load-check.mjs --break-view=weft.files",
     "vscode:prepublish": "node esbuild.mjs --production",
     "smoke": "node scripts/smoke.mjs",
     "load-check": "node scripts/load-check.mjs",
@@ -379,11 +379,11 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "Braid runs the git CLI, which honours repository-local configuration."
+      "description": "Weft runs the git CLI, which honours repository-local configuration."
     },
     "virtualWorkspaces": {
       "supported": false,
-      "description": "Braid needs a real filesystem and a local git executable."
+      "description": "Weft needs a real filesystem and a local git executable."
     }
   },
   "repository": {

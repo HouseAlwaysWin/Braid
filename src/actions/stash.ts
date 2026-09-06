@@ -45,7 +45,7 @@ async function verifyStash(context: ActionContext): Promise<string | null> {
 }
 
 const stashPush: Action = {
-  id: 'braid.stashPush',
+  id: 'weft.stashPush',
   group: 'stash',
   tier: Tier.Safe,
 
@@ -105,7 +105,7 @@ const stashPush: Action = {
 };
 
 const stashApply: Action = {
-  id: 'braid.stashApply',
+  id: 'weft.stashApply',
   group: 'stash',
   tier: Tier.Safe,
 
@@ -137,7 +137,7 @@ const stashApply: Action = {
 };
 
 const stashPop: Action = {
-  id: 'braid.stashPop',
+  id: 'weft.stashPop',
   group: 'stash',
   tier: Tier.Safe,
 
@@ -172,7 +172,7 @@ const stashPop: Action = {
 };
 
 const stashDrop: Action = {
-  id: 'braid.stashDrop',
+  id: 'weft.stashDrop',
   group: 'danger',
   tier: Tier.Destructive,
 

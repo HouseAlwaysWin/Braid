@@ -6,8 +6,8 @@
  * abandoned before anything else can happen, and a tool that shows a graph without showing that
  * state is how people end up three commands deep in something they did not know they were in.
  *
- * Braid does not try to resolve conflicts. VS Code's merge editor is better at that than anything
- * that would fit here, so Braid's job is to say what is going on, list the files, and offer the
+ * Weft does not try to resolve conflicts. VS Code's merge editor is better at that than anything
+ * that would fit here, so Weft's job is to say what is going on, list the files, and offer the
  * three ways out git actually provides.
  */
 
@@ -34,7 +34,7 @@ async function countAhead(git: Git, repo: RepoInfo, revision: string): Promise<n
 }
 
 const merge: Action = {
-  id: 'braid.merge',
+  id: 'weft.merge',
   group: 'commit',
   // Forwards only: a merge adds a commit and moves the branch on. Nothing stops being reachable,
   // and a conflicted merge can be abandoned outright.
@@ -83,7 +83,7 @@ const merge: Action = {
 };
 
 const rebase: Action = {
-  id: 'braid.rebase',
+  id: 'weft.rebase',
   group: 'commit',
   // Rebase rewrites commits: the originals stop being reachable from the branch, and only the
   // reflog still knows about them.
@@ -153,7 +153,7 @@ function control(
   options: { tier: Tier; label: string; detail?: string },
 ): Action {
   return {
-    id: `braid.${kind}Operation`,
+    id: `weft.${kind}Operation`,
     // All three are the same kind of thing - a way out - and the banner selects on exactly this.
     // Abort still renders in red: the view styles by tier, not by group.
     group: 'operation',

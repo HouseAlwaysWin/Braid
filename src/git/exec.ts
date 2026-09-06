@@ -65,7 +65,7 @@ export class GitTimeoutError extends Error {
 
   constructor(args: readonly string[], idleMs: number) {
     super(
-      `The remote stopped responding: no output for ${Math.round(idleMs / 1000)}s, so Braid gave up waiting. ` +
+      `The remote stopped responding: no output for ${Math.round(idleMs / 1000)}s, so Weft gave up waiting. ` +
         'Nothing was changed locally.',
     );
     this.name = 'GitTimeoutError';
@@ -154,7 +154,7 @@ function isOpenSsh(command: string): boolean {
 /** git writes progress to stderr forever; nothing we run should produce more than this. */
 const MAX_BUFFER = 256 * 1024 * 1024;
 
-/** How long a network command may say nothing at all before Braid stops waiting for it. */
+/** How long a network command may say nothing at all before Weft stops waiting for it. */
 export const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
 
 export class Git {
@@ -233,7 +233,7 @@ export class Git {
    * - **BatchMode for ssh**, so ssh fails instead of stopping to ask for a passphrase or to confirm
    *   an unknown host key. In a terminal those are prompts; here they are a process that never
    *   returns. See `sshEnv` for why this is done so carefully.
-   * - **No credential handling of any kind.** Braid uses whatever credential helper is already
+   * - **No credential handling of any kind.** Weft uses whatever credential helper is already
    *   configured; `GIT_TERMINAL_PROMPT=0` means an unauthenticated remote fails fast with a message
    *   rather than hanging, and signing in stays where the user already does it.
    */
@@ -258,7 +258,7 @@ export class Git {
    *
    * The temptation is to just set it and get BatchMode. That would be a bug: `GIT_SSH_COMMAND`
    * overrides `core.sshCommand`, so setting it blindly replaces a per-repository deploy key or a
-   * different ssh binary with plain `ssh` - breaking a push that worked before Braid touched it.
+   * different ssh binary with plain `ssh` - breaking a push that worked before Weft touched it.
    * `GIT_SSH` is the same trap in older form, and on Windows it is often plink.
    *
    * So: add BatchMode to a command that is recognisably OpenSSH, supply one when there is none, and

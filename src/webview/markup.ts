@@ -21,7 +21,7 @@
  * the query box: on a narrow panel the search moves to a second line instead of shrinking.
  */
 export const BODY_MARKUP = `<header id="header">
-  <span id="title">Braid</span>
+  <span id="title">Weft</span>
   <span id="upstream" hidden></span>
   <span id="status">loading…</span>
   <button id="compare-mark" type="button" hidden></button>

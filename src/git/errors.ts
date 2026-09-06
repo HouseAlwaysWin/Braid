@@ -16,7 +16,7 @@
 
 import { GitError } from './exec.ts';
 
-/** Something Braid can offer to do about a failure, resolved by the caller. */
+/** Something Weft can offer to do about a failure, resolved by the caller. */
 export const Remedy = {
   /** Stash the working tree and run the same action again. */
   StashAndRetry: 'stash-and-retry',
@@ -133,7 +133,7 @@ const RULES: Rule[] = [
   {
     match: /(Authentication failed|could not read Username|Permission denied \(publickey\)|terminal prompts disabled)/,
     message: () =>
-      'git could not authenticate with the remote. Braid uses your existing credential helper - try the same operation from the Source Control view or a terminal to sign in.',
+      'git could not authenticate with the remote. Weft uses your existing credential helper - try the same operation from the Source Control view or a terminal to sign in.',
     remedies: [],
   },
   /*
@@ -145,7 +145,7 @@ const RULES: Rule[] = [
     // What --force-with-lease refuses on. The lease held a sha; the remote no longer has it.
     match: /stale info/,
     message: () =>
-      'The remote moved after Braid checked it, so the lease refused - someone pushed in the meantime. Nothing was overwritten.',
+      'The remote moved after Weft checked it, so the lease refused - someone pushed in the meantime. Nothing was overwritten.',
     remedies: [Remedy.Fetch],
   },
   {
@@ -179,7 +179,7 @@ const RULES: Rule[] = [
   },
   {
     match: /(Could not resolve host|Connection timed out|Failed to connect|Network is unreachable|Connection refused)/,
-    message: () => 'Braid could not reach the remote. Check the connection, or that the host name is right.',
+    message: () => 'Weft could not reach the remote. Check the connection, or that the host name is right.',
     remedies: [],
   },
   {
@@ -191,7 +191,7 @@ const RULES: Rule[] = [
   {
     match: /(divergent branches|Not possible to fast-forward)/,
     message: () =>
-      'This branch and its upstream have both moved, so there is no fast-forward. Pull, and Braid will ask whether to merge or rebase.',
+      'This branch and its upstream have both moved, so there is no fast-forward. Pull, and Weft will ask whether to merge or rebase.',
     remedies: [],
   },
   {
