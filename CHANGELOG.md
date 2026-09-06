@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+- Merging now asks whether to fast-forward or record a merge commit - but only when the branch is
+  strictly behind, which is the only case where both are possible.
+- **Squash** a branch into the working tree, as its own action. It stages the changes without
+  committing, and warns that git will still consider the branch unmerged afterwards.
+- A staged squash is recognised as an operation in progress. It leaves no `MERGE_HEAD`, so
+  `git merge --abort` refuses it; the banner offers `reset --merge`, which is what actually
+  undoes one.
+
 ## 0.1.2
 
 - The marketplace description said "read-only", which stopped being true several milestones ago.

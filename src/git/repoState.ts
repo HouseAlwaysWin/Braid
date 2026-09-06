@@ -25,6 +25,16 @@ export const Operation = {
   Revert: 'revert',
   Rebase: 'rebase',
   Bisect: 'bisect',
+  /**
+   * `merge --squash`, staged and not yet committed.
+   *
+   * The odd one out, and the reason it is here at all: it leaves no `MERGE_HEAD`, so `git merge
+   * --abort` refuses it - "There is no merge to abort" - and every other way out git offers is for
+   * something this is not. Without it the repository sits with staged changes, possibly conflicted,
+   * and no banner saying so. Offering a way into that state without recognising it would be worse
+   * than not offering the state.
+   */
+  Squash: 'squash',
 } as const;
 
 export type Operation = (typeof Operation)[keyof typeof Operation];
@@ -142,11 +152,14 @@ export async function readOperation(gitDir: string): Promise<Operation> {
     return Operation.Rebase;
   }
 
-  const [merge, cherryPick, revert, bisect] = await Promise.all([
+  const [merge, cherryPick, revert, bisect, squash] = await Promise.all([
     exists(`${gitDir}/MERGE_HEAD`),
     exists(`${gitDir}/CHERRY_PICK_HEAD`),
     exists(`${gitDir}/REVERT_HEAD`),
     exists(`${gitDir}/BISECT_LOG`),
+    // Written by `merge --squash` whether or not it conflicted, and removed by the commit that
+    // concludes it - so its presence means exactly "a squash is staged and not yet committed".
+    exists(`${gitDir}/SQUASH_MSG`),
   ]);
 
   if (merge) {
@@ -163,6 +176,12 @@ export async function readOperation(gitDir: string): Promise<Operation> {
 
   if (bisect) {
     return Operation.Bisect;
+  }
+
+  // Last: a squash writes SQUASH_MSG and nothing else writes it, but checking it after the others
+  // costs nothing and keeps a real merge winning if some future git ever wrote both.
+  if (squash) {
+    return Operation.Squash;
   }
 
   return Operation.None;
@@ -340,6 +359,8 @@ export function describeOperation(operation: Operation): string | null {
       return 'a rebase';
     case Operation.Bisect:
       return 'a bisect';
+    case Operation.Squash:
+      return 'a squash merge';
     default:
       return null;
   }

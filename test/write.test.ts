@@ -24,6 +24,7 @@ import { discover } from '../src/git/discovery.ts';
 import type { RepoInfo } from '../src/git/discovery.ts';
 import {
   Operation,
+  describeOperation,
   parseBranchHeader,
   parseStatus,
   readOperation,
@@ -723,7 +724,9 @@ function makeConflictingRepo(): string {
 test('merging a branch brings its commits in', async () => {
   const dir = makeRepo();
 
-  const result = await run(dir, 'weft.merge', branch('feature'));
+  // `main` is behind `feature` here, so the action asks whether to fast-forward. Answering is part
+  // of merging now; the assertions below are about what arrives either way.
+  const result = await run(dir, 'weft.merge', branch('feature'), fakeUi({ choices: ['Fast-forward'] }));
 
   assert.equal(result.ran, true);
   assert.match(result.message, /Merged 1 commit/);
@@ -1525,4 +1528,159 @@ test('deleting on a remote is offered for remote branches and nothing else', asy
   // And the local one is never a push: the two are separate actions so that the word Delete keeps
   // meaning one thing in each place it appears.
   assert.ok(!onLocal.some((item) => item.id === 'weft.deleteRemoteBranch'));
+});
+
+
+/*
+ * Merging: the question, and the one that declines to merge at all.
+ *
+ * The assertions are about the shape of the history afterwards - how many parents the new commit
+ * has, whether HEAD moved at all - because that is the whole of what these options differ by.
+ */
+
+/** How many parents HEAD has. Two means a merge commit; one means it did not record a merge. */
+function parentCount(dir: string): number {
+  return sh(dir, 'rev-list', '--parents', '-n', '1', 'HEAD').trim().split(/\s+/).length - 1;
+}
+
+/** `main` strictly behind `feature`, so a fast-forward is on the table. */
+function makeBehind(): string {
+  const dir = makeRepo();
+  sh(dir, 'checkout', '-q', 'main');
+  sh(dir, 'merge', '-q', '--ff-only', 'feature');
+  sh(dir, 'reset', '-q', '--hard', 'HEAD~1');
+  return dir;
+}
+
+/** Both branches moved, so a merge commit is the only thing a merge can produce. */
+function makeDiverged(): string {
+  const dir = makeRepo();
+  writeFileSync(join(dir, 'c.txt'), 'three\n');
+  sh(dir, 'add', '-A');
+  sh(dir, 'commit', '-q', '-m', 'on main only');
+  return dir;
+}
+
+test('merging asks how only when a fast-forward is actually possible', async () => {
+  const behind = makeBehind();
+  const asked = fakeUi({ choices: ['Fast-forward'] });
+  await run(behind, 'weft.merge', branch('feature'), asked);
+
+  assert.equal(asked.questions.length, 1, 'a branch that is strictly behind has a real choice');
+  assert.match(asked.questions[0] ?? '', /behind feature/);
+
+  const diverged = makeDiverged();
+  const notAsked = fakeUi();
+  await run(diverged, 'weft.merge', branch('feature'), notAsked);
+
+  // Offering "fast-forward or merge commit" when only one of them is possible is a choice of one.
+  assert.deepEqual(notAsked.questions, [], 'diverged histories have nothing to choose');
+  assert.equal(parentCount(diverged), 2);
+});
+
+test('fast-forward moves the branch and records nothing', async () => {
+  const dir = makeBehind();
+  const result = await run(dir, 'weft.merge', branch('feature'), fakeUi({ choices: ['Fast-forward'] }));
+
+  assert.equal(result.ran, true);
+  assert.equal(parentCount(dir), 1, 'a fast-forward is not a merge commit');
+  assert.equal(
+    sh(dir, 'rev-parse', 'main').trim(),
+    sh(dir, 'rev-parse', 'feature').trim(),
+    'main should now be exactly where feature is',
+  );
+});
+
+test('choosing a merge commit records one even though it could have fast-forwarded', async () => {
+  const dir = makeBehind();
+  const result = await run(dir, 'weft.merge', branch('feature'), fakeUi({ choices: ['Merge commit'] }));
+
+  assert.equal(result.ran, true);
+  assert.equal(parentCount(dir), 2, 'the fork should still be in the history');
+  assert.match(result.message, /with a merge commit/);
+  assert.notEqual(sh(dir, 'rev-parse', 'main').trim(), sh(dir, 'rev-parse', 'feature').trim());
+});
+
+test('backing out of the merge question merges nothing', async () => {
+  const dir = makeBehind();
+  const before = sh(dir, 'rev-parse', 'main').trim();
+  const result = await run(dir, 'weft.merge', branch('feature'), fakeUi({ choices: [] }));
+
+  assert.equal(result.ran, false);
+  assert.equal(sh(dir, 'rev-parse', 'main').trim(), before);
+});
+
+test('squashing stages the changes and commits nothing', async () => {
+  const dir = makeDiverged();
+  const before = sh(dir, 'rev-parse', 'HEAD').trim();
+  const result = await run(dir, 'weft.mergeSquash', branch('feature'), fakeUi());
+
+  assert.equal(result.ran, true);
+  assert.equal(sh(dir, 'rev-parse', 'HEAD').trim(), before, 'HEAD must not move');
+  assert.match(sh(dir, 'status', '--porcelain'), /^A\s+b\.txt/m, 'the changes should be staged');
+  assert.ok(existsSync(join(dir, '.git', 'SQUASH_MSG')), 'git should have prepared a message');
+  assert.match(result.message, /Commit them in Source Control/);
+});
+
+test('the squash confirmation says the branch will still look unmerged', async () => {
+  const dir = makeDiverged();
+  const ui = fakeUi();
+  await run(dir, 'weft.mergeSquash', branch('feature'), ui);
+
+  // The consequence people are surprised by afterwards, said beforehand.
+  assert.match(ui.confirmations[0] ?? '', /will still consider feature\s+unmerged/);
+  assert.match(ui.confirmations[0] ?? '', /Nothing is committed/);
+
+  // And it is true: git does not count a squashed branch as merged.
+  assert.doesNotMatch(sh(dir, 'branch', '--merged', 'main'), /feature/);
+});
+
+test('a staged squash is an operation, and abandoning it cleans up after itself', async () => {
+  const dir = makeDiverged();
+  await run(dir, 'weft.mergeSquash', branch('feature'), fakeUi());
+
+  const repo = await open(dir);
+  const during = await readRepoState(git, repo);
+
+  // Without this the repository sits with staged changes and no banner saying why, and `git merge
+  // --abort` refuses it - the state Weft would have put the user into with no way out on offer.
+  assert.equal(during.operation, Operation.Squash);
+  assert.equal(describeOperation(during.operation), 'a squash merge');
+
+  const result = await run(dir, 'weft.abortOperation', { kind: 'repo' }, fakeUi());
+
+  assert.equal(result.ran, true);
+  assert.equal(sh(dir, 'status', '--porcelain').trim(), '', 'nothing staged, nothing changed');
+  assert.equal(existsSync(join(dir, '.git', 'SQUASH_MSG')), false);
+
+  const after = await readRepoState(git, await open(dir));
+  assert.equal(after.operation, Operation.None);
+});
+
+test('continue is not offered for a squash, and says where the commit box is', async () => {
+  const dir = makeDiverged();
+  await run(dir, 'weft.mergeSquash', branch('feature'), fakeUi());
+
+  const state = await readRepoState(git, await open(dir));
+  const menu = buildMenu({ kind: 'repo' }, state);
+
+  assert.match(
+    menu.find((item) => item.id === 'weft.continueOperation')?.disabledReason ?? '',
+    /Source Control/,
+  );
+  assert.equal(menu.find((item) => item.id === 'weft.abortOperation')?.disabledReason, null);
+});
+
+test('squashing refuses while something else is staged', async () => {
+  const dir = makeDiverged();
+  writeFileSync(join(dir, 'unrelated.txt'), 'mine\n');
+  sh(dir, 'add', 'unrelated.txt');
+
+  const repo = await open(dir);
+  const state = await readRepoState(git, repo);
+  const action = findAction('weft.mergeSquash');
+
+  // A squash lands in the index; anything already there would ride along into a commit whose
+  // message is about the branch.
+  assert.match(action?.unavailable(branch('feature'), state) ?? '', /already staged/);
 });

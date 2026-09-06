@@ -90,6 +90,11 @@ Working:
 - **Git Weft: Manage Remotes...** in the command palette lists what each remote points at, and
   adds, renames, repoints or removes one. Adding fetches it; removing says how many
   remote-tracking branches go with it
+- Merging asks how only when there is something to ask: a branch that is strictly behind can
+  fast-forward or take a merge commit, and one that has diverged can only do the latter, so it is
+  not offered a choice of one. **Squash** is its own entry rather than a third option, because it
+  declines to join the histories at all - it stages the changes and leaves the commit to Source
+  Control, and says up front that git will still call the branch unmerged afterwards
 - Fetch, pull and push, using whatever credential helper is already set up - Weft never asks for
   a password and never stores one. Pull asks whether to merge or rebase only when the histories
   have actually diverged, and force push is `--force-with-lease` after a fetch, never `--force`

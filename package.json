@@ -3,7 +3,7 @@
   "displayName": "Git Weft",
   "icon": "media/icon.png",
   "description": "A fast Git commit graph for VS Code, with the operations you would reach for while looking at it.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "publisher": "HouseAlwaysWin",
   "license": "MIT",
   "engines": {
