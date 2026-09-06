@@ -392,8 +392,16 @@ body.vscode-high-contrast.author-tint .row .author {
 }
 
 /*
- * The other end of a comparison. Marked rather than selected: only one row is selected, and this
- * one is the second half of a question about the first, not a rival answer to it.
+ * Marked to compare from, but nothing compared yet - half a question. The bar without the ground
+ * behind it: it is a note about this row rather than something being shown about it.
+ */
+.row.compare-anchor {
+  box-shadow: inset 2px 0 0 var(--vscode-charts-purple, #b180d7);
+}
+
+/*
+ * Both ends of a comparison that is on screen. Marked rather than selected: only one row is
+ * selected, and these two are a question about each other, not rival answers to it.
  */
 .row.compared {
   background: var(--vscode-list-inactiveSelectionBackground, rgba(127, 127, 127, 0.22));
