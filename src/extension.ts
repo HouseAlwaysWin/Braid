@@ -313,6 +313,35 @@ function start(context: vscode.ExtensionContext): void {
       );
     }),
 
+    /*
+     * Delete, from the tree rather than from a badge in the graph.
+     *
+     * Which action that means depends on what was right-clicked, and the two are not
+     * interchangeable: deleting a branch can strand commits and says so, deleting a tag cannot.
+     * The manifest keeps this off remote branches entirely - removing one of those is a push to a
+     * server, not a change to this clone, and it does not belong on the same menu as the two that
+     * only touch what is here.
+     */
+    vscode.commands.registerCommand('weft.deleteRef', (node: unknown) => {
+      const target = refs.targetOf(node);
+
+      if (target === null || target.refKind === 'remote') {
+        return;
+      }
+
+      const panel = WeftPanel.any();
+
+      if (panel === null) {
+        void vscode.window.showInformationMessage('Weft: open the graph first.');
+        return;
+      }
+
+      panel.runTargetAction(target.refKind === 'tag' ? 'weft.deleteTag' : 'weft.deleteBranch', {
+        kind: 'ref',
+        ...target,
+      });
+    }),
+
     vscode.commands.registerCommand('weft.showAllAuthors', () => authors.showAll()),
 
     /*

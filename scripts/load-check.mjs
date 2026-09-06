@@ -44,6 +44,10 @@ function makeTempRepo() {
   commitInto(dir, 9);
   runGit(dir, 'checkout', '-q', 'main');
 
+  // A tag, so the Branches & Tags section has all three kinds of ref in it. Without one, anything
+  // asking what a tag looks like gets the group node above it and quietly checks the wrong thing.
+  runGit(dir, 'tag', 'v1.0');
+
   return dir;
 }
 
@@ -1001,6 +1005,10 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 {
   const treeView = treeViews.get('weft.refs');
 
+  // Counted, not written down. These assertions were two hardcoded 2s until a tag was added to the
+  // fixture, at which point they failed for saying nothing about the code.
+  const total = treeProviders.get('weft.refs').listRefs().length;
+
   /*
    * The message has to carry the half that is not on screen. Filtering the list leaves every ref
    * that fell out of it still ticked and still walked - so a line naming only what is listed
@@ -1016,11 +1024,11 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 
   console.log('  says         :', JSON.stringify(narrowed));
 
-  if (!narrowed.includes('of 2 refs')) {
+  if (!narrowed.includes(`of ${total} refs`)) {
     problems.push(`the message does not say how many refs it is listing: ${narrowed}`);
   }
 
-  if (!narrowed.includes('still walks all 2')) {
+  if (!narrowed.includes(`still walks all ${total}`)) {
     problems.push(`the message does not say the unlisted refs are still walked: ${narrowed}`);
   }
 
@@ -1369,6 +1377,82 @@ if (watchTest) {
 
   if ((walks().pop() ?? '').includes('--first-parent')) {
     problems.push('turning first parent off left it on the command line');
+  }
+}
+
+/*
+ * The manifest's menus against the context values the trees actually emit.
+ *
+ * A `when` clause naming a context value nothing produces is a menu entry that silently is not
+ * there - no error, no warning, just a right-click missing an item. The same shape as a view id
+ * going stale, and invisible in the same way.
+ */
+{
+  const refsProvider = treeProviders.get('weft.refs');
+  const groups = refsProvider.getChildren();
+
+  const kindOf = (groupId) => {
+    const node = refsProvider.getChildren(groups.find((g) => g.id === groupId))[0];
+    return node === undefined ? null : refsProvider.getTreeItem(node).contextValue;
+  };
+
+  const emitted = { local: kindOf('heads'), tag: kindOf('tags') };
+  console.log('\nref contexts   :', JSON.stringify(emitted));
+
+  /** Enough of the `when` language for the forms this manifest uses. */
+  const matches = (when, viewItem) => {
+    const clauses = when.split('&&').map((c) => c.trim());
+
+    return clauses.every((clause) => {
+      if (clause.startsWith('view ==')) {
+        return clause.includes('weft.refs');
+      }
+
+      const regex = /^viewItem\s*=~\s*\/(.+)\/$/.exec(clause);
+
+      if (regex !== null) {
+        return new RegExp(regex[1]).test(viewItem);
+      }
+
+      const equals = /^viewItem\s*==\s*(\S+)$/.exec(clause);
+      return equals === null ? true : equals[1] === viewItem;
+    });
+  };
+
+  const refMenus = manifest.contributes.menus['view/item/context'].filter(
+    (entry) => (entry.when ?? '').includes('weft.refs'),
+  );
+
+  for (const entry of refMenus) {
+    const hits = ['local', 'tag', 'remote']
+      .filter((kind) => matches(entry.when, emitted[kind] ?? `weftRef${kind[0].toUpperCase()}${kind.slice(1)}`));
+
+    if (hits.length === 0) {
+      problems.push(`${entry.command} is in the manifest but its when clause matches no ref`);
+    }
+  }
+
+  const deletable = ['local', 'tag', 'remote'].filter((kind) =>
+    refMenus.some(
+      (entry) =>
+        entry.command === 'weft.deleteRef' &&
+        matches(entry.when, emitted[kind] ?? `weftRef${kind[0].toUpperCase()}${kind.slice(1)}`),
+    ),
+  );
+
+  console.log('delete offered :', deletable.join(', ') || '(nothing)');
+
+  if (deletable.join(',') !== 'local,tag') {
+    problems.push(`Delete is offered for ${deletable.join(', ') || 'nothing'}, expected local and tag`);
+  }
+
+  // And it refuses a remote branch even when called directly, rather than leaving a menu clause as
+  // the only thing between a tree node and a push. Anything it did say would land on the stub's
+  // message handlers, which count every unexpected one as a failure.
+  const remoteNode = refsProvider.getChildren(groups.find((g) => g.id === 'remotes'))[0];
+
+  if (remoteNode !== undefined) {
+    await commands.get('weft.deleteRef')(remoteNode);
   }
 }
 

@@ -68,6 +68,11 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "weft.deleteRef",
+        "title": "Delete",
+        "category": "Git Weft"
+      },
+      {
         "command": "weft.checkoutRef",
         "title": "Checkout",
         "category": "Git Weft"
@@ -199,6 +204,10 @@
           "when": "false"
         },
         {
+          "command": "weft.deleteRef",
+          "when": "false"
+        },
+        {
           "command": "weft.showOnlyRef",
           "when": "false"
         },
@@ -269,28 +278,33 @@
           "group": "copy@2"
         },
         {
+          "command": "weft.deleteRef",
+          "when": "view == weft.refs && viewItem =~ /^weftRef(Local|Tag)$/",
+          "group": "danger@1"
+        },
+        {
           "command": "weft.copyRefName",
-          "when": "view == weft.refs && viewItem == weftRef",
+          "when": "view == weft.refs && viewItem =~ /^weftRef/",
           "group": "copy@1"
         },
         {
           "command": "weft.copyFullRefName",
-          "when": "view == weft.refs && viewItem == weftRef",
+          "when": "view == weft.refs && viewItem =~ /^weftRef/",
           "group": "copy@2"
         },
         {
           "command": "weft.checkoutRef",
-          "when": "view == weft.refs && viewItem == weftRef",
+          "when": "view == weft.refs && viewItem =~ /^weftRef/",
           "group": "navigation@1"
         },
         {
           "command": "weft.showOnlyRef",
-          "when": "view == weft.refs && viewItem == weftRef",
+          "when": "view == weft.refs && viewItem =~ /^weftRef/",
           "group": "filter@1"
         },
         {
           "command": "weft.showAllRefs",
-          "when": "view == weft.refs && viewItem == weftRef",
+          "when": "view == weft.refs && viewItem =~ /^weftRef/",
           "group": "filter@2"
         }
       ],

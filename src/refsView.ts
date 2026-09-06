@@ -244,7 +244,14 @@ export class RefsProvider implements vscode.TreeDataProvider<Node> {
     const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
     item.id = `ref:${node.refName}`;
     item.checkboxState = this.hidden.has(node.refName) ? Unchecked : Checked;
-    item.contextValue = 'weftRef';
+    /*
+     * The kind is part of the context value because the menu has to tell them apart: a local branch
+     * and a tag are deleted by different commands, and a remote branch is not deleted from here at
+     * all - that would be a push to somebody else's clone.
+     */
+    item.contextValue = `weftRef${
+      node.group.id === 'tags' ? 'Tag' : node.group.id === 'remotes' ? 'Remote' : 'Local'
+    }`;
     item.tooltip = `${node.refName}\nUntick to keep it out of the graph`;
 
     item.iconPath = new vscode.ThemeIcon(
