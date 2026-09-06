@@ -1,10 +1,15 @@
 # Changelog
 
-## 0.1.1
+## 0.1.2
 
 - The marketplace description said "read-only", which stopped being true several milestones ago.
   The README was corrected at the time and the manifest was not, so the one line every visitor
   reads first was the one line still claiming the extension only looks.
+- Moved building and testing out of the README and into `CONTRIBUTING.md`. The marketplace renders
+  the whole README, so the extension's own page was opening on `npm install` - instructions for
+  working on it, shown to everyone deciding whether to use it.
+
+0.1.1 was tagged with the first of these and superseded before it was uploaded.
 
 ## 0.1.0
 
