@@ -25,6 +25,9 @@ Working:
   separate entry, **Delete on Remote...**, because it is a push to a server rather than a change to
   this clone - the confirmation says which remote, what stops being reachable there, which local
   branches are left tracking nothing, and that there is no reflog on the far end
+- Order the walk by commit date, author date, or topologically - the dropdown beside the search.
+  Topological keeps a branch's commits together instead of interleaving them by date, which on a
+  history with concurrent branches is a different graph within a handful of rows
 - Fetch on a timer if you want one (`weft.autoFetchMinutes`, off by default). Weft also picks up
   fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit
@@ -209,6 +212,13 @@ On a synthetic 100,000-commit repository (`scripts/make-fixture.mjs`), Windows 1
 | Throughput | ~90,000 commits/sec |
 | Graph points for 100k rows | 7,998 |
 | Parsed history in memory | 68 MB |
+| First row: commit date / author date / topological | 521 / 551 / 517 ms |
+
+The three orderings cost the same, which is worth saying because it sounds as though they should
+not. All three make git read the history before it emits a row, so none of them is the cheap one -
+and git's own chronological order, which *is* cheap, is not on offer: it can put a parent before its
+child under clock skew, and the lane layout cannot survive that. The choice is which shape the
+history reads best in, not what it is worth waiting for.
 
 Memory is the number that still needs work: 68 MB of commit objects is more than an extension host
 should hold, and the next optimisation is a columnar store rather than one object per commit.

@@ -2092,6 +2092,50 @@ if (disposeHandler !== null) {
   problems.push('the panel never registered a dispose handler');
 }
 
+/*
+ * The ordering flag, all the way to git.
+ *
+ * The control changing a variable is not the feature; the walk being ordered differently is. So the
+ * assertion reads the command log rather than any state the view holds - the one place that says
+ * what git was actually asked for.
+ */
+{
+  const walks = () => outputLines.filter((line) => line.startsWith('debug') && line.includes('log'));
+  const before = walks().length;
+
+  await messageHandler({ type: 'order', order: 'topo' });
+  await new Promise((r) => setTimeout(r, 2500));
+
+  const latest = walks().at(-1) ?? '';
+  const asked = (latest.match(/--[a-z-]*order/g) ?? []).join(' ');
+
+  console.log('\nordering       : topo ->', asked || '(none)');
+
+  if (walks().length === before) {
+    problems.push('changing the commit order did not run another walk');
+  } else if (asked !== '--topo-order') {
+    // One flag, not two. `--date-order --topo-order` happens to work because git takes the last,
+    // which is a graph decided by argument order rather than by the user.
+    problems.push(`the order was set to topo and git was asked for: ${asked || 'no order at all'}`);
+  }
+
+  // And back, so nothing after this reads a differently ordered history.
+  await messageHandler({ type: 'order', order: 'date' });
+  await new Promise((r) => setTimeout(r, 2000));
+
+  const back = walks().at(-1) ?? '';
+
+  // Exactly one ordering flag, always. Two would leave git's last-wins rule deciding what the
+  // graph looks like, which is a coin toss dressed as a default.
+  const flags = (back.match(/--[a-z-]*order/g) ?? []).join(' ');
+  console.log('back to date   :', flags || '(none)');
+
+  if (flags !== '--date-order') {
+    problems.push(`going back to the default walk asked git for: ${flags || 'no order at all'}`);
+  }
+}
+
+
 console.log('\ngit log        :', outputLines.filter((l) => l.startsWith('debug')).length, 'commands');
 
 if (problems.length > 0) {

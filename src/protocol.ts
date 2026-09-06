@@ -60,6 +60,15 @@ export interface RefEntry {
   readonly visible: boolean;
 }
 
+/**
+ * How git is asked to order the walk.
+ *
+ * Three, not four: git's own chronological order can put a parent before its child under clock
+ * skew, which the lane layout cannot survive, so it is not on offer. `date` is what Weft has always
+ * done and stays the default.
+ */
+export type CommitOrder = 'date' | 'author-date' | 'topo';
+
 export type HostMessage =
   | {
       readonly type: 'init';
@@ -168,6 +177,7 @@ export type WebviewMessage =
       readonly search: Search | null;
       readonly dates: DateRange | null;
       readonly firstParent: boolean;
+      readonly order: CommitOrder;
     }
   | { readonly type: 'refresh' }
   /** Drop the search, the date range, and the sidebar's ref and author filters, all at once. */
@@ -177,6 +187,7 @@ export type WebviewMessage =
   | { readonly type: 'dates'; readonly range: DateRange | null }
   /** Walk only the first parent of every merge: the mainline, without what was merged into it. */
   | { readonly type: 'firstParent'; readonly on: boolean }
+  | { readonly type: 'order'; readonly order: CommitOrder }
   | { readonly type: 'selectCommit'; readonly sha: string }
   /** The working-tree row was picked. It has no commit to load, only files to list. */
   | { readonly type: 'selectUncommitted' }

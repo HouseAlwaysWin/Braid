@@ -16,7 +16,7 @@
 import type { GraphDelta, PathDelta } from '../graph/layout.ts';
 import type { GraphDot, Point } from '../graph/model.ts';
 import { DotKind } from '../graph/model.ts';
-import type { CommitInfo, RefEntry } from '../protocol.ts';
+import type { CommitInfo, CommitOrder, RefEntry } from '../protocol.ts';
 import type { DateRange } from '../git/dates.ts';
 import type { Upstream } from '../git/repoState.ts';
 import type { Search, SearchMode, SearchToggle } from '../git/search.ts';
@@ -56,6 +56,7 @@ const branchFilter = document.getElementById('branch-filter') as HTMLInputElemen
 const branchRows = document.getElementById('branch-rows') as HTMLElement;
 const branchEmpty = document.getElementById('branch-empty') as HTMLElement;
 const firstParentEl = document.getElementById('first-parent') as HTMLButtonElement;
+const commitOrderEl = document.getElementById('commit-order') as HTMLSelectElement;
 const viewport = document.getElementById('viewport') as HTMLElement;
 const spacer = document.getElementById('spacer') as HTMLElement;
 const rowsEl = document.getElementById('rows') as HTMLElement;
@@ -80,6 +81,7 @@ interface ViewState {
   readonly dateSince?: string;
   readonly dateUntil?: string;
   readonly firstParent?: boolean;
+  readonly order?: CommitOrder;
   /** Which groups of the branch menu are rolled up. Worth keeping: a repository with two hundred
       remote branches is one you collapse once and want to stay collapsed. */
   readonly branchGroupsClosed?: readonly string[];
@@ -110,6 +112,7 @@ function saveViewState(): void {
     dateSince: dateSince.value,
     dateUntil: dateUntil.value,
     firstParent,
+    order: commitOrder,
     branchGroupsClosed: [...branchGroupsClosed],
     columns: Object.fromEntries(
       FIXED_COLUMNS.map((column) => [column.key, { ...columnState[column.key] }]),
@@ -152,6 +155,8 @@ function restoreViewState(): void {
 
   applyColumns();
   firstParent = state?.firstParent ?? false;
+  commitOrder = state?.order ?? 'date';
+  commitOrderEl.value = commitOrder;
   searchInput.value = state?.query ?? '';
   searchMode.value = state?.mode ?? 'message';
   dateRange.value = state?.dateChoice ?? '';
@@ -214,6 +219,16 @@ let remote: { upstream: Upstream | null; branch: string | null; fetchedAt: numbe
  * it counts towards "something is narrowing this" and the button that drops everything drops it.
  */
 let firstParent = false;
+
+/*
+ * How git is asked to order the walk.
+ *
+ * Not a filter and not the column sort: it hides nothing and the graph stays a graph. The column
+ * sort flattens - a lane point's Y is a row index, so any order git did not produce makes the lanes
+ * meaningless and they are dropped. These are still git walking, so the lanes still mean something.
+ * What changes is the shape the history is drawn in.
+ */
+let commitOrder: CommitOrder = 'date';
 
 /**
  * The HEAD commit's dot, kept as it arrives rather than searched for.
@@ -2278,6 +2293,12 @@ function updateFirstParent(): void {
   firstParentEl.classList.toggle('on', firstParent);
 }
 
+commitOrderEl.addEventListener('change', () => {
+  commitOrder = commitOrderEl.value as CommitOrder;
+  saveViewState();
+  vscode.postMessage({ type: 'order', order: commitOrder });
+});
+
 firstParentEl.addEventListener('click', () => {
   firstParent = !firstParent;
   updateFirstParent();
@@ -2535,4 +2556,5 @@ vscode.postMessage({
   search: currentSearch(),
   dates: currentRange(),
   firstParent,
+  order: commitOrder,
 });

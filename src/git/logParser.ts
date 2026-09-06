@@ -47,9 +47,6 @@ export const LOG_FORMAT = `%x1e%H%x00%P%x00%aN%x00%aE%x00%aI%x00%cI%x00%D%x00%s`
 /** The flags that must accompany LOG_FORMAT for the output to parse. */
 export const LOG_ARGS = [
   '--no-show-signature',
-  // A parent must never precede its child or the lane layout waits forever for a SHA that already
-  // went past. Chronological order can violate that under clock skew; --date-order cannot.
-  '--date-order',
   '--decorate=full',
   `--format=${LOG_FORMAT}`,
 ] as const;

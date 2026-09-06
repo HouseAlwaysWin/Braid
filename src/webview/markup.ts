@@ -34,6 +34,11 @@ export const BODY_MARKUP = `<header id="header">
     <span id="search-box">
       <button class="toggle" id="first-parent" type="button"
         title="Walk only the first parent of every merge: the mainline, without the commits that were merged into it.">first parent</button>
+      <select id="commit-order" title="How git orders the walk. All three keep a parent below its children, which the lanes depend on, and all three cost the same - the difference is which shape the history reads best in. Topological keeps a branch&#39;s commits together instead of interleaving them by date.">
+        <option value="date">commit date</option>
+        <option value="author-date">author date</option>
+        <option value="topo">topological</option>
+      </select>
       <select id="date-range" title="Limit the walk to a stretch of time. git compares the committer date, which the Date column does not show - identical for ordinary history, different for anything rebased.">
         <option value="">any time</option>
         <option value="today">today</option>

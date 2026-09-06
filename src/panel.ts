@@ -19,7 +19,7 @@ import type { Search } from './git/search.ts';
 import { filterArgs } from './git/search.ts';
 import type { DateRange } from './git/dates.ts';
 import { dateArgs } from './git/dates.ts';
-import type { HostMessage, RefEntry, Row, WebviewMessage } from './protocol.ts';
+import type { CommitOrder, HostMessage, RefEntry, Row, WebviewMessage } from './protocol.ts';
 import { BODY_MARKUP } from './webview/markup.ts';
 
 /**
@@ -174,6 +174,8 @@ export class WeftPanel {
   private fetchTimer: NodeJS.Timeout | null = null;
   /** Walk only the mainline. A filter like any other: it decides which commits are on screen. */
   private firstParent = false;
+  /** Not a filter: ordering hides nothing, so `clearFilters` leaves it alone the way it leaves sort. */
+  private order: CommitOrder = 'date';
   private readonly filters: FilterSource;
 
   private readonly ui: ActionUi = {
@@ -392,6 +394,7 @@ export class WeftPanel {
         this.search = message.search;
         this.dates = message.dates;
         this.firstParent = message.firstParent;
+        this.order = message.order;
         await this.reload();
         break;
       case 'refresh':
@@ -410,6 +413,10 @@ export class WeftPanel {
         break;
       case 'firstParent':
         this.firstParent = message.on;
+        await this.reload();
+        break;
+      case 'order':
+        this.order = message.order;
         await this.reload();
         break;
       case 'copy':
@@ -837,6 +844,7 @@ export class WeftPanel {
           batchSize: 500,
           maxCommits: config.get<number>('maxCommits', 250_000),
           firstParentOnly: this.firstParent,
+          order: this.order,
           filters: filterArgs(this.search, this.filters.authorArgs(), dates),
           refs: this.filters.refs(),
           stashes,
