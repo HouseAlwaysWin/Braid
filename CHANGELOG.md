@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- The marketplace description said "read-only", which stopped being true several milestones ago.
+  The README was corrected at the time and the manifest was not, so the one line every visitor
+  reads first was the one line still claiming the extension only looks.
+
 ## 0.1.0
 
 The first published version. Everything below is what it does; nothing has shipped before this, so

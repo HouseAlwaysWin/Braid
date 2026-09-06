@@ -2,8 +2,8 @@
   "name": "git-weft",
   "displayName": "Git Weft",
   "icon": "media/icon.png",
-  "description": "A fast, read-only Git commit graph for VS Code.",
-  "version": "0.1.0",
+  "description": "A fast Git commit graph for VS Code, with the operations you would reach for while looking at it.",
+  "version": "0.1.1",
   "publisher": "HouseAlwaysWin",
   "license": "MIT",
   "engines": {
