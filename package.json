@@ -450,13 +450,14 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/load-check.mjs --watch && node scripts/load-check.mjs --break-view=weft.files",
+    "test": "npm run build --silent && node --test \"test/**/*.test.ts\" && node scripts/color-check.mjs && node scripts/column-check.mjs && node scripts/load-check.mjs --watch && node scripts/load-check.mjs --break-view=weft.files",
     "vscode:prepublish": "node esbuild.mjs --production",
     "smoke": "node scripts/smoke.mjs",
     "load-check": "node scripts/load-check.mjs",
     "package": "vsce package --no-dependencies",
     "icon-check": "node scripts/icon-check.mjs",
     "color-check": "node scripts/color-check.mjs",
+    "column-check": "node scripts/column-check.mjs",
     "test:unit": "node --test \"test/**/*.test.ts\""
   },
   "devDependencies": {

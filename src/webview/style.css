@@ -1076,3 +1076,96 @@ body.vscode-high-contrast.author-tint .row .author {
 .branch-row.off .branch-name {
   opacity: 0.55;
 }
+
+/*
+ * Column layout, driven from script.
+ *
+ * Every row emits the same four cells whatever is on screen, because a virtualised list rebuilding
+ * its cells per scroll is the one place per-row work is worth avoiding. So hiding a column cannot
+ * mean leaving its cell out - the ones after it would slide into the wrong tracks. Each cell names
+ * the track it belongs to instead, and a hidden column is a cell that is not displayed and a track
+ * that is not in the template.
+ *
+ * The properties are set on the root by script; these rules are the only thing that reads them, and
+ * the fallbacks are the layout with nothing hidden and nothing dragged.
+ */
+#columns .col[data-sort='subject'],
+.cell-subject {
+  grid-column: 1;
+}
+
+#columns .col[data-sort='author'] {
+  grid-column: var(--weft-col-author, 2);
+  display: var(--weft-col-author-show, flex);
+}
+
+.author {
+  grid-column: var(--weft-col-author, 2);
+  display: var(--weft-col-author-show, block);
+}
+
+#columns .col[data-sort='date'] {
+  grid-column: var(--weft-col-date, 3);
+  display: var(--weft-col-date-show, flex);
+}
+
+.date {
+  grid-column: var(--weft-col-date, 3);
+  display: var(--weft-col-date-show, block);
+}
+
+#columns .col[data-sort='sha'] {
+  grid-column: var(--weft-col-sha, 4);
+  display: var(--weft-col-sha-show, flex);
+}
+
+.sha {
+  grid-column: var(--weft-col-sha, 4);
+  display: var(--weft-col-sha-show, block);
+}
+
+/*
+ * The grips sit on each fixed column's *left* edge, because that is the boundary that moves. The
+ * three of them are right-anchored and Description absorbs the slack, so dragging the line left is
+ * what makes a column wider - which is what the line appears to do.
+ */
+#columns {
+  position: relative;
+}
+
+.col-grip {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.col-grip[hidden] {
+  display: none;
+}
+
+/* The line itself is one pixel; the nine are so it can be grabbed. */
+.col-grip::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+}
+
+.col-grip:hover::after,
+.col-grip.dragging::after {
+  background: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder, #0078d4));
+}
+
+/* The tick column in a checkable menu, so the labels line up whether or not they are ticked. */
+.menu-tick {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}

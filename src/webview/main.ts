@@ -83,6 +83,8 @@ interface ViewState {
   /** Which groups of the branch menu are rolled up. Worth keeping: a repository with two hundred
       remote branches is one you collapse once and want to stay collapsed. */
   readonly branchGroupsClosed?: readonly string[];
+  /** Column widths in pixels and which are switched off. Absent width means the default. */
+  readonly columns?: Record<string, { readonly width?: number; readonly hidden?: boolean }>;
 }
 
 /*
@@ -109,6 +111,9 @@ function saveViewState(): void {
     dateUntil: dateUntil.value,
     firstParent,
     branchGroupsClosed: [...branchGroupsClosed],
+    columns: Object.fromEntries(
+      FIXED_COLUMNS.map((column) => [column.key, { ...columnState[column.key] }]),
+    ),
   } satisfies ViewState);
 }
 
@@ -128,6 +133,24 @@ function restoreViewState(): void {
   }
 
   branchGroupsClosed = new Set(state?.branchGroupsClosed ?? []);
+
+  for (const column of FIXED_COLUMNS) {
+    const saved = state?.columns?.[column.key];
+
+    if (saved !== undefined) {
+      // Assigned rather than spread: an explicit `width: undefined` is a different thing from no
+      // width at all, and only the second means "follow the font".
+      const restored: { width?: number; hidden: boolean } = { hidden: saved.hidden === true };
+
+      if (typeof saved.width === 'number') {
+        restored.width = saved.width;
+      }
+
+      columnState[column.key] = restored;
+    }
+  }
+
+  applyColumns();
   firstParent = state?.firstParent ?? false;
   searchInput.value = state?.query ?? '';
   searchMode.value = state?.mode ?? 'message';
@@ -136,6 +159,9 @@ function restoreViewState(): void {
   dateUntil.value = state?.dateUntil ?? '';
   dateCustom.hidden = dateRange.value !== 'custom';
 }
+
+/** What the grips were last placed against, so they are only re-measured when it moves. */
+let columnGeometry = '';
 
 let rowHeight = 24;
 let graphWidth = 0;
@@ -284,6 +310,19 @@ function render(): void {
    */
   columnsEl.style.paddingLeft = `${indent}px`;
   columnsEl.style.paddingRight = `${12 + viewport.offsetWidth - viewport.clientWidth}px`;
+
+  /*
+   * The grips are measured, so they have to be re-measured whenever the boundaries could have
+   * moved - the panel resizing, the lanes widening, a scrollbar arriving. Only when the geometry
+   * actually changed: this runs every frame, and four rect reads per frame during a scroll is the
+   * kind of thing that turns a smooth list into a stuttering one.
+   */
+  const geometry = `${indent}:${columnsEl.clientWidth}`;
+
+  if (geometry !== columnGeometry) {
+    columnGeometry = geometry;
+    placeGrips();
+  }
 
   renderRows(indent);
   drawGraph();
@@ -1035,10 +1074,14 @@ function renderMenu(target: Target, items: readonly MenuItem[], x: number, y: nu
     menu.append(el);
   }
 
+  showMenuAt(menu, x, y);
+}
+
+/** Put a built menu on screen at the pointer, pulled back inside the window if it would hang off. */
+function showMenuAt(menu: HTMLElement, x: number, y: number): void {
   document.body.append(menu);
   menuEl = menu;
 
-  // Place it at the pointer, then pull it back inside the window if it would hang off an edge.
   const box = menu.getBoundingClientRect();
   const left = Math.min(x, window.innerWidth - box.width - 4);
   const top = Math.min(y, window.innerHeight - box.height - 4);
@@ -1543,6 +1586,231 @@ function cycleSort(column: SortColumn): void {
   saveViewState();
   applyView();
 }
+
+/*
+ * The three columns that can be resized and switched off.
+ *
+ * Description is not among them on purpose. It is the `1fr` that absorbs whatever the other three
+ * leave, so it has no width of its own to drag, and it is the column people came to read - a header
+ * menu that offers to hide it is offering a graph with no subjects in it.
+ *
+ * Defaults stay in `ch` rather than pixels so they follow the editor's font. A width only becomes a
+ * number once somebody drags one, and only that column stops adapting.
+ */
+const FIXED_COLUMNS = [
+  { key: 'author', label: 'Author', fallback: '16ch' },
+  { key: 'date', label: 'Date', fallback: '10ch' },
+  { key: 'sha', label: 'Commit', fallback: '9ch' },
+] as const;
+
+type ColumnKey = (typeof FIXED_COLUMNS)[number]['key'];
+
+const columnState: Record<string, { width?: number; hidden: boolean }> = {
+  author: { hidden: false },
+  date: { hidden: false },
+  sha: { hidden: false },
+};
+
+/** The narrowest a column may be dragged - below this the header text is gone and so is the grip. */
+const MIN_COLUMN = 36;
+
+/**
+ * Push the column layout onto the root, where the stylesheet reads it.
+ *
+ * Custom properties rather than a generated stylesheet: the content security policy has no
+ * `unsafe-inline` for styles, and setting a property through the CSSOM is not what that forbids.
+ */
+function applyColumns(): void {
+  const root = document.documentElement;
+  const tracks = ['minmax(6ch, 1fr)'];
+  let track = 1;
+
+  for (const column of FIXED_COLUMNS) {
+    const state = columnState[column.key] ?? { hidden: false };
+
+    if (state.hidden) {
+      root.style.setProperty(`--weft-col-${column.key}-show`, 'none');
+      continue;
+    }
+
+    root.style.removeProperty(`--weft-col-${column.key}-show`);
+    track += 1;
+    tracks.push(state.width === undefined ? column.fallback : `${state.width}px`);
+    root.style.setProperty(`--weft-col-${column.key}`, String(track));
+  }
+
+  root.style.setProperty('--weft-columns', tracks.join(' '));
+  placeGrips();
+  schedule();
+}
+
+/**
+ * Put each grip on its column's left edge.
+ *
+ * Measured rather than computed: the tracks can be `ch`, the gap is its own value, and the header
+ * carries a left padding that follows the graph's width. Reading the boxes back is the one way to
+ * be right about all three at once.
+ */
+function placeGrips(): void {
+  const bar = columnsEl.getBoundingClientRect();
+
+  for (const column of FIXED_COLUMNS) {
+    const grip = columnsEl.querySelector<HTMLElement>(`.col-grip[data-grip='${column.key}']`);
+    const cell = columnsEl.querySelector<HTMLElement>(`.col[data-sort='${column.key}']`);
+
+    if (grip === null || cell === null) {
+      continue;
+    }
+
+    const state = columnState[column.key] ?? { hidden: false };
+    grip.hidden = state.hidden;
+
+    if (!state.hidden) {
+      // Half the gap to the left of the cell, so the line sits between the two columns rather than
+      // against the text of one of them.
+      grip.style.left = `${cell.getBoundingClientRect().left - bar.left - 8}px`;
+    }
+  }
+}
+
+function setColumnWidth(key: ColumnKey, width: number): void {
+  const state = columnState[key];
+
+  if (state === undefined) {
+    return;
+  }
+
+  // Leave the subject something to be. Without a ceiling a determined drag can take every pixel,
+  // and the column that matters most is the one with no minimum of its own to defend it.
+  const ceiling = Math.max(MIN_COLUMN, columnsEl.clientWidth - 120);
+
+  state.width = Math.round(Math.min(Math.max(width, MIN_COLUMN), ceiling));
+  applyColumns();
+}
+
+columnsEl.addEventListener('pointerdown', (event: PointerEvent) => {
+  const grip = (event.target as HTMLElement).closest('.col-grip') as HTMLElement | null;
+
+  if (grip === null) {
+    return;
+  }
+
+  const key = grip.dataset['grip'] as ColumnKey;
+  const cell = columnsEl.querySelector<HTMLElement>(`.col[data-sort='${key}']`);
+
+  if (cell === null) {
+    return;
+  }
+
+  const startX = event.clientX;
+  const startWidth = cell.getBoundingClientRect().width;
+
+  grip.setPointerCapture(event.pointerId);
+  grip.classList.add('dragging');
+  event.preventDefault();
+
+  // The fixed columns are anchored to the right, so the boundary moving left is the column growing.
+  const onMove = (move: PointerEvent): void => setColumnWidth(key, startWidth - (move.clientX - startX));
+
+  const onUp = (): void => {
+    grip.classList.remove('dragging');
+    grip.removeEventListener('pointermove', onMove);
+    grip.removeEventListener('pointerup', onUp);
+    grip.removeEventListener('pointercancel', onUp);
+    saveViewState();
+  };
+
+  grip.addEventListener('pointermove', onMove);
+  grip.addEventListener('pointerup', onUp);
+  grip.addEventListener('pointercancel', onUp);
+});
+
+// Double-clicking a sash to reset it is the convention everywhere else in VS Code.
+columnsEl.addEventListener('dblclick', (event) => {
+  const grip = (event.target as HTMLElement).closest('.col-grip') as HTMLElement | null;
+
+  if (grip === null) {
+    return;
+  }
+
+  const state = columnState[grip.dataset['grip'] as ColumnKey];
+
+  if (state !== undefined) {
+    // Back to the `ch` default, which means back to following the font rather than to a number
+    // that happened to be right once.
+    delete state.width;
+    applyColumns();
+    saveViewState();
+  }
+});
+
+/** Right-clicking the header offers the columns; Description is listed but never switchable. */
+function openColumnMenu(event: MouseEvent): void {
+  closeMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'menu';
+  menu.setAttribute('role', 'menu');
+
+  const entry = (label: string, on: boolean, run: (() => void) | null): void => {
+    const el = document.createElement('div');
+
+    el.className = `menu-item${run === null ? ' disabled' : ''}`;
+    el.setAttribute('role', 'menuitemcheckbox');
+    el.setAttribute('aria-checked', String(on));
+    el.append(span('menu-tick', on ? '\u2713' : '\u00A0'), span('menu-label-text', label));
+
+    if (run !== null) {
+      el.addEventListener('click', () => {
+        closeMenu();
+        run();
+      });
+    }
+
+    menu.append(el);
+  };
+
+  // Listed and greyed rather than left out: its absence would read as a bug of its own, and the
+  // reason it cannot be switched off is that it is the column people came to read.
+  entry('Description', true, null);
+
+  for (const column of FIXED_COLUMNS) {
+    const state = columnState[column.key] ?? { hidden: false };
+
+    entry(column.label, !state.hidden, () => {
+      state.hidden = !state.hidden;
+      applyColumns();
+      saveViewState();
+    });
+  }
+
+  const rule = document.createElement('div');
+  rule.className = 'menu-separator';
+  menu.append(rule);
+
+  const reset = document.createElement('div');
+  reset.className = 'menu-item';
+  reset.setAttribute('role', 'menuitem');
+  reset.textContent = 'Reset columns';
+  reset.addEventListener('click', () => {
+    closeMenu();
+
+    for (const column of FIXED_COLUMNS) {
+      columnState[column.key] = { hidden: false };
+    }
+
+    applyColumns();
+    saveViewState();
+  });
+
+  menu.append(reset);
+  showMenuAt(menu, event.clientX, event.clientY);
+}
+
+columnsEl.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  openColumnMenu(event);
+});
 
 /** The header's arrows, emphasis and enabled state - everything that reports the current order. */
 function updateColumns(): void {

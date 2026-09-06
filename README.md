@@ -90,6 +90,10 @@ Working:
 - Fetch, pull and push, using whatever credential helper is already set up - Weft never asks for
   a password and never stores one. Pull asks whether to merge or rebase only when the histories
   have actually diverged, and force push is `--force-with-lease` after a fetch, never `--force`
+- Drag the line between two column headings to resize a column, double-click it to put the width
+  back, and right-click the headings to switch Author, Date or Commit off. Description stays: it is
+  the `1fr` the others leave their space to, and the column people came to read. All of it is
+  remembered across panel reloads
 - Draggable split between the graph and the details pane, remembered across panel reloads
 
 Anything that could destroy uncommitted work names the files it would destroy before asking, and
