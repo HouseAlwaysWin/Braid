@@ -28,6 +28,14 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
   /** Selected authors, by name. Empty means everyone, which is not the same as nobody. */
   private readonly selected = new Set<string>();
 
+  /**
+   * Text narrowing the *listing*, which is a different job from the ticks.
+   *
+   * The ticks decide whose commits the graph walks. This decides who is on screen to tick. On a
+   * repository with two hundred contributors the second is what stands between you and the first.
+   */
+  private query = '';
+
   readonly onDidChangeTreeData = this.changed.event;
   readonly onDidChangeFilter = this.filterChanged.event;
 
@@ -44,6 +52,9 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
     this.authors = [];
     this.loaded = false;
     this.selected.clear();
+    // A name typed to find someone in one repository means nothing in another.
+    this.query = '';
+    this.publishFiltering();
     this.changed.fire(undefined);
   }
 
@@ -69,7 +80,84 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
       this.updateMessage();
     }
 
-    return this.authors;
+    return this.visible();
+  }
+
+  /** Authors left after the text filter. Matches the email too - names collide, addresses do not. */
+  private visible(): Author[] {
+    if (this.query.length === 0) {
+      return this.authors;
+    }
+
+    const needle = this.query.toLowerCase();
+    return this.authors.filter(
+      (author) =>
+        author.name.toLowerCase().includes(needle) || author.email.toLowerCase().includes(needle),
+    );
+  }
+
+  /** Narrow the listing. An empty string clears it. */
+  setQuery(query: string): void {
+    this.query = query.trim();
+    this.changed.fire(undefined);
+    this.updateMessage();
+    this.publishFiltering();
+  }
+
+  get filterText(): string {
+    return this.query;
+  }
+
+  /** Every author, for a picker to offer as completions. */
+  listAuthors(): { name: string; email: string; commits: number }[] {
+    return this.authors.map((author) => ({
+      name: author.name,
+      email: author.email,
+      commits: author.commits,
+    }));
+  }
+
+  /**
+   * Tick everyone the list is currently showing.
+   *
+   * The gesture the text filter exists to enable: narrow to a team, a surname, a company's domain,
+   * then show the graph exactly those people. Doing it a tick at a time is the thing that made a
+   * long list unusable in the first place.
+   */
+  showOnlyListed(): void {
+    const listed = this.visible();
+
+    if (listed.length === 0) {
+      return;
+    }
+
+    const before = this.selected.size;
+
+    this.selected.clear();
+
+    for (const author of listed) {
+      this.selected.add(author.name);
+    }
+
+    // Nothing moved, so nothing is announced: re-applying the same set would cost a full walk of
+    // the history to arrive at the same graph.
+    if (before === this.selected.size && before === listed.length) {
+      this.changed.fire(undefined);
+      this.updateMessage();
+      return;
+    }
+
+    this.changed.fire(undefined);
+    this.updateMessage();
+    this.filterChanged.fire();
+  }
+
+  private publishFiltering(): void {
+    void vscode.commands.executeCommand(
+      'setContext',
+      'weft.authorsListFiltered',
+      this.query.length > 0,
+    );
   }
 
   getTreeItem(author: Author): vscode.TreeItem {
@@ -110,15 +198,23 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
 
   /** Clear the selection and repaint. Announcing it is the caller's, so a bulk clear reloads once. */
   reset(): boolean {
-    if (this.selected.size === 0) {
+    const filtered = this.query.length > 0;
+
+    if (this.selected.size === 0 && !filtered) {
       return false;
     }
 
+    const wasSelecting = this.selected.size > 0;
+
     this.selected.clear();
+    this.query = '';
+    this.publishFiltering();
     this.changed.fire(undefined);
     this.updateMessage();
 
-    return true;
+    // Clearing a listing filter changes nothing the graph walked, so it is not worth a reload. Only
+    // the ticks were.
+    return wasSelecting;
   }
 
   showAll(): void {
@@ -137,9 +233,29 @@ export class AuthorsProvider implements vscode.TreeDataProvider<Author> {
       return;
     }
 
+    const listed = this.visible().length;
+    const total = this.authors.length;
+
+    /*
+     * The message has to carry the half that is not on screen.
+     *
+     * Narrowing the list leaves everyone who fell out of it exactly as they were - the graph is
+     * unchanged by typing a name. A line naming only what is listed invites the reader to conclude
+     * they are looking at the filter itself, which is the same trap the ref list had.
+     */
+    if (this.query.length > 0) {
+      const ticked =
+        this.selected.size === 0
+          ? 'Nothing is ticked, so the graph still shows everyone.'
+          : `${this.selected.size} ticked, which is what the graph is showing.`;
+
+      this.view.message = `Listing ${listed} of ${total} authors matching \u201C${this.query}\u201D. ${ticked}`;
+      return;
+    }
+
     this.view.message =
       this.selected.size === 0
         ? 'Tick an author to show only their commits.'
-        : `Showing ${this.selected.size} of ${this.authors.length} authors.`;
+        : `Showing ${this.selected.size} of ${total} authors.`;
   }
 }

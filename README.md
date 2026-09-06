@@ -86,6 +86,10 @@ Working:
   unticked, so the graph still walks all 24.` One button applies the listing to the graph when that
   is what you meant
 - A text filter for the branch list itself, for repositories with more refs than fit on screen
+- **Authors** has the same filter the branch list has, for the same reason: on a repository with
+  two hundred contributors, finding the one you want is what stands between you and ticking them.
+  Narrow to a name, a surname or a company's email domain, then one button shows the graph exactly
+  the people left listed
 - Each author gets their own colour, derived from the name so it never shifts as pages stream in
 - **Git Weft: Manage Remotes...** in the command palette lists what each remote points at, and
   adds, renames, repoints or removes one. Adding fetches it; removing says how many

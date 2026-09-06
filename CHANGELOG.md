@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- **Authors** can be filtered by text, the way branches and tags already could - typing narrows who
+  is listed without changing what the graph walks, and **Show Only Who Is Listed** applies the
+  listing to it in one click.
 - Merging now asks whether to fast-forward or record a merge commit - but only when the branch is
   strictly behind, which is the only case where both are possible.
 - **Squash** a branch into the working tree, as its own action. It stages the changes without

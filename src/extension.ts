@@ -471,6 +471,59 @@ function start(context: vscode.ExtensionContext): void {
       picker.show();
     }),
 
+    /*
+     * The same picker as the ref filter, over the other list that gets long.
+     *
+     * Authors differ in one way that matters here: the tick means "show only these", so filtering
+     * the list and then ticking what is left is the whole gesture - narrow to a team, show the
+     * graph that team. `weft.showOnlyListedAuthors` is the second half of it.
+     */
+    vscode.commands.registerCommand('weft.filterAuthors', async () => {
+      // The list is loaded lazily, when the section is first expanded. Opening the picker is asking
+      // for it, so ask for it rather than offering an empty one.
+      await authors.getChildren();
+
+      const picker = vscode.window.createQuickPick<vscode.QuickPickItem & { author?: string }>();
+      const before = authors.filterText;
+
+      picker.title = 'Filter authors';
+      picker.placeholder = 'Type to narrow the list, or pick one';
+      picker.value = before;
+      picker.matchOnDescription = true;
+      picker.matchOnDetail = true;
+      picker.items = authors.listAuthors().map((author) => ({
+        label: author.name,
+        description: `${author.commits}`,
+        detail: author.email,
+        author: author.name,
+      }));
+
+      let accepted = false;
+
+      picker.onDidChangeValue((value) => authors.setQuery(value));
+
+      picker.onDidAccept(() => {
+        accepted = true;
+        // Picking an entry narrows to exactly it; accepting what was typed keeps that, which is how
+        // you narrow to everyone at one company rather than to one person.
+        authors.setQuery(picker.selectedItems[0]?.author ?? picker.value);
+        picker.hide();
+      });
+
+      picker.onDidHide(() => {
+        // Escape undoes the live filtering. Leaving it applied would make cancelling do something.
+        if (!accepted) {
+          authors.setQuery(before);
+        }
+
+        picker.dispose();
+      });
+
+      picker.show();
+    }),
+
+    vscode.commands.registerCommand('weft.showOnlyListedAuthors', () => authors.showOnlyListed()),
+
     vscode.commands.registerCommand('weft.stash', () => repoAction('weft.stashPush')),
 
     /*

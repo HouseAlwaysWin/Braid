@@ -1147,6 +1147,73 @@ if (treeProvider !== undefined && checkboxHandler !== undefined) {
 }
 
 /*
+ * Narrowing the author list, which is a different job from ticking one.
+ *
+ * The tick decides whose commits the graph walks; the text decides who is on screen to tick. A
+ * repository with two hundred contributors makes the second the thing standing between the reader
+ * and the first, and the message has to say which of the two just happened.
+ */
+{
+  const provider = treeProviders.get('weft.authors');
+  const view = treeViews.get('weft.authors');
+  const everyone = await provider.getChildren();
+  const walksBefore = posted.filter((m) => m.type === 'done').length;
+
+  // Drive it the way the picker does: type, then accept.
+  const target = everyone[0];
+  provider.setQuery(target.name);
+
+  const listed = await provider.getChildren();
+
+  console.log('\nauthor filter  :', JSON.stringify(view?.message ?? ''));
+  console.log('  listing      :', listed.map((a) => a.name).join(', '), `of ${everyone.length}`);
+
+  if (listed.length !== 1 || listed[0].name !== target.name) {
+    problems.push(`filtering authors to ${target.name} listed ${listed.length}`);
+  }
+
+  // Typing a name walks nothing: the graph is whatever the ticks say, and none of them moved.
+  if (posted.filter((m) => m.type === 'done').length !== walksBefore) {
+    problems.push('narrowing the author list re-walked the history');
+  }
+
+  const said = view?.message ?? '';
+
+  if (!said.includes(`of ${everyone.length} authors`)) {
+    problems.push(`the message does not say how many authors it is listing: ${said}`);
+  }
+
+  // The half that is not on screen. Without it the reader concludes the list is the filter.
+  if (!said.includes('still shows everyone')) {
+    problems.push(`the message does not say the graph is unaffected: ${said}`);
+  }
+
+  // --- and the second half of the gesture: show the graph exactly who is listed -----------------
+  await commands.get('weft.showOnlyListedAuthors')();
+
+  const by = Date.now() + 20_000;
+  while (Date.now() < by && posted.filter((m) => m.type === 'done').length === walksBefore) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  const narrowed = posted.filter((m) => m.type === 'done').pop()?.total ?? 0;
+
+  console.log('  applied      :', narrowed, 'commits |', JSON.stringify(view?.message ?? ''));
+
+  if (narrowed !== target.commits) {
+    problems.push(`showing only ${target.name} gave ${narrowed} commits, expected ${target.commits}`);
+  }
+
+  // Back to everyone, so nothing after this is measuring a filtered history.
+  await commands.get('weft.showAllAuthors')();
+  await new Promise((r) => setTimeout(r, 1200));
+
+  if (provider.filterText !== '') {
+    problems.push('Show All left the author list still narrowed');
+  }
+}
+
+/*
  * One gesture, four sources. The filters live in three different places - the graph's search box,
  * its date range, and two tree views in Source Control - and the whole point of the button is that
  * the reader does not have to remember which of them they used. So set all of them, then check that

@@ -63,6 +63,18 @@
         "icon": "$(filter)"
       },
       {
+        "command": "weft.filterAuthors",
+        "title": "Filter Authors…",
+        "category": "Git Weft",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "weft.showOnlyListedAuthors",
+        "title": "Show Only Who Is Listed",
+        "category": "Git Weft",
+        "icon": "$(filter-filled)"
+      },
+      {
         "command": "weft.showAllAuthors",
         "title": "Show All Authors",
         "category": "Git Weft",
@@ -345,9 +357,19 @@
           "group": "navigation@3"
         },
         {
-          "command": "weft.showAllAuthors",
+          "command": "weft.filterAuthors",
           "when": "view == weft.authors",
           "group": "navigation@1"
+        },
+        {
+          "command": "weft.showOnlyListedAuthors",
+          "when": "view == weft.authors && weft.authorsListFiltered",
+          "group": "navigation@2"
+        },
+        {
+          "command": "weft.showAllAuthors",
+          "when": "view == weft.authors",
+          "group": "navigation@2"
         },
         {
           "command": "weft.filesAsList",
