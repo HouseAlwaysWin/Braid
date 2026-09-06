@@ -37,6 +37,8 @@
 export const BODY_MARKUP = `<header id="header">
   <div id="header-controls">
     <span id="title">Weft</span>
+    <button id="clear-filters" type="button" hidden
+      title="Drop the search, the date range, and the branch and author filters in Source Control. The sort is left alone.">clear filters</button>
     <span id="search-box">
       <button class="toggle" id="first-parent" type="button"
         title="Walk only the first parent of every merge: the mainline, without the commits that were merged into it.">first parent</button>
@@ -95,8 +97,6 @@ export const BODY_MARKUP = `<header id="header">
     <span id="upstream" hidden></span>
     <span id="status">loading&hellip;</span>
     <button id="compare-mark" type="button" hidden></button>
-    <button id="clear-filters" type="button" hidden
-      title="Drop the search, the date range, and the branch and author filters in Source Control. The sort is left alone.">clear filters</button>
     <button id="clear-sort" type="button" hidden
       title="A sorted list is flat: the lanes only mean anything in the order git walked them. Click to go back.">graph order</button>
   </div>
