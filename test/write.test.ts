@@ -1397,3 +1397,132 @@ test('managing remotes is offered even when there are none', async () => {
     'No remotes configured',
   );
 });
+
+
+/*
+ * Deleting a branch on the server.
+ *
+ * The remote is a bare repository on disk, so the push is a real push and the assertions read the
+ * branch list out of the server rather than out of the clone that asked for it to go.
+ */
+
+const remoteRef = (label: string): Target => ({
+  kind: 'ref',
+  refName: `refs/remotes/${label}`,
+  label,
+  refKind: 'remote',
+});
+
+/** A bare repository with `main` and `doomed` on it, and a clone that has fetched both. */
+function makeServed(): { dir: string; server: string } {
+  const server = mkdtempSync(join(tmpdir(), 'weft-server-')).split('\\').join('/');
+  made.push(server);
+  sh(server, 'init', '-q', '--bare', '-b', 'main');
+
+  const dir = makeRepo();
+  sh(dir, 'checkout', '-q', '-b', 'doomed');
+  writeFileSync(join(dir, 'only-here.txt'), 'nowhere else\n');
+  sh(dir, 'add', '-A');
+  sh(dir, 'commit', '-q', '-m', 'a commit that lives on this branch alone');
+  sh(dir, 'checkout', '-q', 'main');
+
+  sh(dir, 'remote', 'add', 'origin', server);
+  sh(dir, 'push', '-q', 'origin', 'main', 'doomed');
+  sh(dir, 'fetch', '-q', 'origin');
+
+  return { dir, server };
+}
+
+function serverBranches(server: string): string[] {
+  return sh(server, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .sort();
+}
+
+test('deleting a remote branch removes it from the server, not just here', async () => {
+  const { dir, server } = makeServed();
+
+  assert.deepEqual(serverBranches(server), ['doomed', 'main']);
+
+  const ui = fakeUi();
+  const result = await run(dir, 'weft.deleteRemoteBranch', remoteRef('origin/doomed'), ui);
+
+  assert.equal(result.ran, true);
+  assert.deepEqual(serverBranches(server), ['main'], 'the branch should be gone from the server');
+
+  // The push takes the remote-tracking ref with it, so nothing is left pointing at a branch that
+  // no longer exists.
+  assert.equal(sh(dir, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin/doomed').trim(), '');
+});
+
+test('the confirmation names the remote, the strandings, and what stops tracking', async () => {
+  const { dir } = makeServed();
+
+  // A local branch tracking the one about to go.
+  sh(dir, 'checkout', '-q', '-b', 'mine', '--track', 'origin/doomed');
+  sh(dir, 'checkout', '-q', 'main');
+
+  const ui = fakeUi();
+  await run(dir, 'weft.deleteRemoteBranch', remoteRef('origin/doomed'), ui);
+
+  const said = ui.confirmations[0] ?? '';
+
+  assert.match(said, /will be deleted from origin/);
+  assert.match(said, /Everyone who fetches from it loses the branch/);
+  assert.match(said, /mine tracks it/);
+  // The habit that makes deleting a local branch feel cheap is the reflog, and it does not apply.
+  assert.match(said, /no reflog on the server/);
+});
+
+test('a remote branch whose commits are reachable elsewhere says nothing was stranded', async () => {
+  const { dir } = makeServed();
+
+  // Merge it, so its commits are on main too.
+  sh(dir, 'merge', '-q', '--no-edit', 'doomed');
+
+  const ui = fakeUi();
+  await run(dir, 'weft.deleteRemoteBranch', remoteRef('origin/doomed'), ui);
+
+  assert.doesNotMatch(ui.confirmations[0] ?? '', /can be reached from nothing else/);
+});
+
+test('backing out of deleting a remote branch leaves it on the server', async () => {
+  const { dir, server } = makeServed();
+
+  const ui = fakeUi({ confirm: false });
+  const result = await run(dir, 'weft.deleteRemoteBranch', remoteRef('origin/doomed'), ui);
+
+  assert.equal(result.ran, false);
+  assert.deepEqual(serverBranches(server), ['doomed', 'main']);
+});
+
+test('origin/HEAD is not offered for deletion, and neither is an unknown remote', async () => {
+  const { dir } = makeServed();
+  const repo = await open(dir);
+  const state = await readRepoState(git, repo);
+  const action = findAction('weft.deleteRemoteBranch');
+
+  // A symbolic alias for whichever branch the server calls default. There is no ref of that name
+  // to delete, and asking git to would either fail or take the wrong one.
+  assert.match(action?.unavailable(remoteRef('origin/HEAD'), state) ?? '', /symbolic alias/);
+  assert.match(action?.unavailable(remoteRef('nowhere/main'), state) ?? '', /known remote/);
+  assert.equal(action?.unavailable(remoteRef('origin/doomed'), state), null);
+});
+
+test('deleting on a remote is offered for remote branches and nothing else', async () => {
+  const { dir } = makeServed();
+  const repo = await open(dir);
+  const state = await readRepoState(git, repo);
+
+  const onRemote = buildMenu(remoteRef('origin/doomed'), state);
+  const onLocal = buildMenu(branch('feature'), state);
+
+  assert.ok(onRemote.some((item) => item.id === 'weft.deleteRemoteBranch'));
+  assert.ok(!onRemote.some((item) => item.id === 'weft.deleteBranch'));
+
+  // And the local one is never a push: the two are separate actions so that the word Delete keeps
+  // meaning one thing in each place it appears.
+  assert.ok(!onLocal.some((item) => item.id === 'weft.deleteRemoteBranch'));
+});

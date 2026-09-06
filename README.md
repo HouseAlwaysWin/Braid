@@ -21,8 +21,10 @@ Working:
   the tree as you save, without re-walking the history to do it
 - Where the branch stands against the one it tracks, and how old that answer is:
   `main ↑2 ↓1 fetched 3h ago` beside the title. The age is not decoration - see the design note
-- Right-click a local branch or a tag in **Branches & Tags** to delete it. Remote branches are not
-  deletable from there: that is a push to a server, not a change to this clone
+- Right-click a local branch or a tag in **Branches & Tags** to delete it. A remote branch gets a
+  separate entry, **Delete on Remote...**, because it is a push to a server rather than a change to
+  this clone - the confirmation says which remote, what stops being reachable there, which local
+  branches are left tracking nothing, and that there is no reflog on the far end
 - Fetch on a timer if you want one (`weft.autoFetchMinutes`, off by default). Weft also picks up
   fetches it did not run, including VS Code's own `git.autofetch`: the watcher sees the refs move
 - Click or arrow-key a commit for its message and metadata; what it changed lands in the **Commit

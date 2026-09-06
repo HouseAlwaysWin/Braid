@@ -425,4 +425,156 @@ const pushForce: Action = {
   },
 };
 
-export const NETWORK_ACTIONS: readonly Action[] = [fetch, pull, push, pushForce];
+/**
+ * Commits reachable from a remote branch and from nothing else.
+ *
+ * The same shape as the local count in `branches.ts`, and the same trap: `--exclude` scopes the
+ * ref-listing option that follows it, and paired with `--remotes` the pattern matches the name
+ * after `refs/remotes/`. Passing the full ref name excludes nothing, the branch stays inside its
+ * own exclusion set, and everything looks reachable.
+ */
+async function strandedOnRemote(git: Git, repo: RepoInfo, label: string): Promise<number> {
+  const out = await git
+    .runRead(repo.root, [
+      'rev-list',
+      '--count',
+      `refs/remotes/${label}`,
+      '--not',
+      `--exclude=${label}`,
+      '--remotes',
+      '--branches',
+      '--tags',
+    ])
+    .catch(() => '0');
+
+  return Number(out.trim()) || 0;
+}
+
+/** Local branches whose upstream is this remote branch - the ones left tracking nothing. */
+async function trackedBy(git: Git, repo: RepoInfo, label: string): Promise<string[]> {
+  const out = await git
+    .runRead(repo.root, ['for-each-ref', '--format=%(refname:short)%00%(upstream:short)', 'refs/heads'])
+    .catch(() => '');
+
+  return out
+    .split('\n')
+    .flatMap((line) => {
+      const [branch = '', upstream = ''] = line.trim().split('\x00');
+      return upstream === label && branch.length > 0 ? [branch] : [];
+    });
+}
+
+/**
+ * Delete a branch from the server.
+ *
+ * A `push --delete`, and separate from deleting a local branch for the reason that makes it worth
+ * its own action: nothing about it is local. It removes the branch for everyone who fetches from
+ * that remote, it cannot be undone from here, and the reflog - which is what makes the local
+ * version recoverable - is a file on this machine that the server has never heard of.
+ *
+ * So the confirmation carries more than a count. It says which remote, what is left tracking
+ * nothing afterwards, and that the reflog is not a way back.
+ */
+const deleteRemoteBranch: Action = {
+  id: 'weft.deleteRemoteBranch',
+  group: 'danger',
+  // Tier 3, alongside force push, and for the same reason: these are the two actions that can
+  // remove work from somewhere that is not this computer.
+  tier: Tier.Destructive,
+
+  label: (target) =>
+    target.kind === 'ref' ? `Delete ${target.label} on the remote` : 'Delete remote branch',
+
+  appliesTo: (target) => target.kind === 'ref' && target.refKind === 'remote',
+
+  unavailable(target, state) {
+    const blocked = noRemotes(state) ?? blockedByOperation(state);
+
+    if (blocked !== null) {
+      return blocked;
+    }
+
+    if (target.kind !== 'ref') {
+      return 'Not a branch';
+    }
+
+    // `origin/HEAD` is a symbolic alias for whichever branch the server calls default. There is no
+    // branch of that name to delete, and asking git to would either fail or delete the wrong thing.
+    if (target.label.endsWith('/HEAD')) {
+      return 'A symbolic alias, not a branch';
+    }
+
+    if (remoteOf(target.label, state.remotes) === null) {
+      return 'Not on a known remote';
+    }
+
+    return null;
+  },
+
+  async confirmDetail({ git, repo, target, state }) {
+    if (target.kind !== 'ref') {
+      return '';
+    }
+
+    const remote = remoteOf(target.label, state.remotes);
+    const branch = remote === null ? target.label : target.label.slice(remote.length + 1);
+    const [stranded, tracking] = await Promise.all([
+      strandedOnRemote(git, repo, target.label),
+      trackedBy(git, repo, target.label),
+    ]);
+
+    const lines = [
+      `${branch} will be deleted from ${remote}. Everyone who fetches from it loses the branch, ` +
+        'not just this clone.',
+    ];
+
+    if (stranded > 0) {
+      lines.push(
+        `${plural(stranded, 'commit')} on it can be reached from nothing else. They stay in this ` +
+          'clone until it is garbage collected, and they stop being on the server now.',
+      );
+    }
+
+    if (tracking.length > 0) {
+      lines.push(`${tracking.join(', ')} tracks it, and will be left tracking nothing.`);
+    }
+
+    // The local version of this is undoable from the reflog, which is why saying so matters: the
+    // habit that makes deleting a branch feel cheap does not apply here.
+    lines.push('There is no reflog on the server, so this cannot be undone from Weft.');
+
+    return lines.join('\n\n');
+  },
+
+  async run({ git, repo, target, state, ui }): Promise<ActionResult> {
+    if (target.kind !== 'ref') {
+      return { message: '', ran: false };
+    }
+
+    const remote = remoteOf(target.label, state.remotes);
+
+    if (remote === null) {
+      return { message: '', ran: false };
+    }
+
+    const branch = target.label.slice(remote.length + 1);
+
+    // `--delete <branch>` rather than the `:branch` refspec: same effect, and one of the two reads
+    // like what it does. The push takes the remote-tracking ref with it, so nothing has to tidy up.
+    await ui.progress(
+      `Deleting ${branch} on ${remote}`,
+      (signal) => git.runNetwork(repo.root, ['push', remote, '--delete', branch, PROGRESS], { signal }),
+      true,
+    );
+
+    return { message: `Deleted ${branch} on ${remote}`, ran: true };
+  },
+};
+
+export const NETWORK_ACTIONS: readonly Action[] = [
+  fetch,
+  pull,
+  push,
+  pushForce,
+  deleteRemoteBranch,
+];

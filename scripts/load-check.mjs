@@ -1573,18 +1573,31 @@ if (watchTest) {
     }
   }
 
-  const deletable = ['local', 'tag', 'remote'].filter((kind) =>
-    refMenus.some(
-      (entry) =>
-        entry.command === 'weft.deleteRef' &&
-        matches(entry.when, emitted[kind] ?? `weftRef${kind[0].toUpperCase()}${kind.slice(1)}`),
-    ),
-  );
+  const offeredBy = (command) =>
+    ['local', 'tag', 'remote'].filter((kind) =>
+      refMenus.some(
+        (entry) =>
+          entry.command === command &&
+          matches(entry.when, emitted[kind] ?? `weftRef${kind[0].toUpperCase()}${kind.slice(1)}`),
+      ),
+    );
 
-  console.log('delete offered :', deletable.join(', ') || '(nothing)');
+  const deletable = offeredBy('weft.deleteRef');
+  const remotely = offeredBy('weft.deleteRemoteRef');
+
+  console.log('delete offered : local/tag ->', deletable.join(', ') || '(nothing)',
+    '| remote ->', remotely.join(', ') || '(nothing)');
 
   if (deletable.join(',') !== 'local,tag') {
     problems.push(`Delete is offered for ${deletable.join(', ') || 'nothing'}, expected local and tag`);
+  }
+
+  // The two must not overlap. Plain "Delete" reaching a remote branch would make a push out of a
+  // word people read as local, which is the confusion the second command exists to prevent.
+  if (remotely.join(',') !== 'remote') {
+    problems.push(
+      `Delete on Remote is offered for ${remotely.join(', ') || 'nothing'}, expected remote alone`,
+    );
   }
 
   // And it refuses a remote branch even when called directly, rather than leaving a menu clause as

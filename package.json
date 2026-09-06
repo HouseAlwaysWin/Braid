@@ -73,6 +73,11 @@
         "category": "Git Weft"
       },
       {
+        "command": "weft.deleteRemoteRef",
+        "title": "Delete on Remote...",
+        "category": "Git Weft"
+      },
+      {
         "command": "weft.checkoutRef",
         "title": "Checkout",
         "category": "Git Weft"
@@ -208,6 +213,10 @@
           "when": "false"
         },
         {
+          "command": "weft.deleteRemoteRef",
+          "when": "false"
+        },
+        {
           "command": "weft.showOnlyRef",
           "when": "false"
         },
@@ -280,6 +289,11 @@
         {
           "command": "weft.deleteRef",
           "when": "view == weft.refs && viewItem =~ /^weftRef(Local|Tag)$/",
+          "group": "danger@1"
+        },
+        {
+          "command": "weft.deleteRemoteRef",
+          "when": "view == weft.refs && viewItem == weftRefRemote",
           "group": "danger@1"
         },
         {

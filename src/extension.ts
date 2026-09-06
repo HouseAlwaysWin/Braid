@@ -346,6 +346,30 @@ function start(context: vscode.ExtensionContext): void {
       });
     }),
 
+    /*
+     * And the remote one, which is a separate command rather than a branch inside the one above.
+     * The menus take their wording from the command, so two of them is what lets the entry say
+     * "on Remote" - the whole difference being that this one is a push to a server and the other
+     * two only touch this clone. One entry called Delete for both would be the wrong word half
+     * the time, in the direction that costs the most.
+     */
+    vscode.commands.registerCommand('weft.deleteRemoteRef', (node: unknown) => {
+      const target = refs.targetOf(node);
+
+      if (target === null || target.refKind !== 'remote') {
+        return;
+      }
+
+      const panel = WeftPanel.any();
+
+      if (panel === null) {
+        void vscode.window.showInformationMessage('Weft: open the graph first.');
+        return;
+      }
+
+      panel.runTargetAction('weft.deleteRemoteBranch', { kind: 'ref', ...target });
+    }),
+
     vscode.commands.registerCommand('weft.showAllAuthors', () => authors.showAll()),
 
     /*
