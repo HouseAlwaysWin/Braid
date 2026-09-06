@@ -159,6 +159,7 @@ function restoreViewState(): void {
   commitOrderEl.value = commitOrder;
   searchInput.value = state?.query ?? '';
   searchMode.value = state?.mode ?? 'message';
+  updateModeTooltip();
   dateRange.value = state?.dateChoice ?? '';
   dateSince.value = state?.dateSince ?? '';
   dateUntil.value = state?.dateUntil ?? '';
@@ -2050,6 +2051,19 @@ function currentMode(): SearchMode {
   return searchMode.value as SearchMode;
 }
 
+/**
+ * Put the selected option's own tooltip on the closed dropdown.
+ *
+ * A `<select>` shows its own title when it is shut, not the selected option's - so without this the
+ * only way to read what a mode does is to open the list and hover the entry you have already
+ * chosen. The modes are not self-describing enough for that: `content` searches the files rather
+ * than the message, and nothing about the word says so.
+ */
+function updateModeTooltip(): void {
+  const chosen = searchMode.selectedOptions[0];
+  searchMode.title = chosen?.title ?? '';
+}
+
 /** The switches this mode honours; the rest are not shown, because they would do nothing. */
 function applicable(): readonly SearchToggle[] {
   return TOGGLES[currentMode()] ?? [];
@@ -2202,6 +2216,7 @@ searchInput.addEventListener('input', () => {
 });
 
 searchMode.addEventListener('change', () => {
+  updateModeTooltip();
   updateSearchToggles();
   refreshHighlight();
 

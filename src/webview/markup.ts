@@ -65,12 +65,12 @@ export const BODY_MARKUP = `<header id="header">
         <input id="date-until" type="date" title="Up to and including this day. Leave empty for no upper bound.">
         <button id="date-close" type="button" title="No date filter" aria-label="Clear the date range">&#10005;</button>
       </span>
-      <select id="search-mode" title="What to search">
-        <option value="message">message</option>
-        <option value="author">author</option>
-        <option value="committer">committer</option>
-        <option value="content">content</option>
-        <option value="path">path</option>
+      <select id="search-mode">
+        <option value="message" title="The commit message. What most searches mean.">message</option>
+        <option value="author" title="Who wrote the commit. Matches the name or the email address, so a domain finds everyone at one company.">author</option>
+        <option value="committer" title="Who committed it, which is the same person as the author until a commit is rebased, cherry-picked, or applied from a patch by somebody else. On a repository where one person lands everyone else&#39;s work, this is how you find what they landed.">committer</option>
+        <option value="content" title="Not the message - the files. Finds commits whose diff added or removed this text, which is how you ask when a function first appeared or when a string was deleted. No other mode can answer that.">content</option>
+        <option value="path" title="Commits that touched this path. The follow switch keeps the history going past a rename, so it does not stop where the file was moved.">path</option>
       </select>
       <span id="search-field">
         <input id="search-input" type="search" placeholder="Search or paste a hash" spellcheck="false">
